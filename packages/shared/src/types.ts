@@ -11,12 +11,21 @@ export interface Quat {
   w: number;
 }
 
+// Field mask bits for delta state updates
+export const FIELD_POSITION = 0x01;
+export const FIELD_ROTATION = 0x02;
+export const FIELD_LIN_VEL  = 0x04;
+export const FIELD_ANG_VEL  = 0x08;
+export const FIELD_ALL      = 0x0F;
+
 export interface BodyState {
   id: string;
   position: Vec3;
   rotation: Quat;
   linVel: Vec3;
   angVel: Vec3;
+  /** Present in delta updates — indicates which field groups were transmitted */
+  fieldMask?: number;
 }
 
 export type ShapeType = 'box' | 'sphere' | 'capsule' | 'mesh';

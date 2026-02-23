@@ -46,7 +46,7 @@ async function main() {
   light.intensity = 0.9;
 
   // 3. Rapier physics plugin (local — used for BabylonJS physics API compatibility)
-  const plugin = new RapierPlugin(RAPIER, new Vector3(0, -1.81, 0));
+  const plugin = new RapierPlugin(RAPIER, new Vector3(0, -9.81, 0));
   scene.enablePhysics(new Vector3(0, -9.81, 0), plugin);
 
   // 4. Connect to server
@@ -181,7 +181,7 @@ async function main() {
       `Tick: ${tick}\n` +
       `RTT: ${rtt.toFixed(1)} ms\n` +
       `Clock offset: ${offset.toFixed(1)} ms\n` +
-      `Bodies: ${state.bodies.length}\n` +
+      `Bodies: ${syncClient.totalBodyCount} (delta: ${state.bodies.length})\n` +
       `WS sent: ${formatBytes(sent)}\n` +
       `WS recv: ${formatBytes(recv)}\n` +
       `Client: ${syncClient.getClientId() ?? '?'}`;

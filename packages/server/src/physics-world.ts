@@ -213,9 +213,10 @@ export class PhysicsWorld {
     this.world.step();
   }
 
-  getSnapshot(): BodyState[] {
+  getSnapshot(skipSleeping = false): BodyState[] {
     const states: BodyState[] = [];
     for (const [id, body] of this.bodyMap) {
+      if (skipSleeping && body.isSleeping()) continue;
       const pos = body.translation();
       const rot = body.rotation();
       const linVel = body.linvel();
@@ -229,6 +230,11 @@ export class PhysicsWorld {
       });
     }
     return states;
+  }
+
+  isBodySleeping(id: string): boolean {
+    const body = this.bodyMap.get(id);
+    return body ? body.isSleeping() : false;
   }
 
   getBodyState(id: string): BodyState | null {

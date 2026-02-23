@@ -48,6 +48,7 @@ export interface ClientInputMessage {
 export interface AddBodyMessage {
   type: MessageType.ADD_BODY;
   body: BodyDescriptor;
+  bodyIndex?: number;
 }
 
 export interface RemoveBodyMessage {
@@ -87,6 +88,7 @@ export interface RoomJoinedMessage {
   snapshot: RoomSnapshot;
   clientId: string;
   simulationRunning: boolean;
+  bodyIdMap?: Record<string, number>;
 }
 
 export interface RoomStateMessage {
@@ -94,6 +96,7 @@ export interface RoomStateMessage {
   tick: number;
   timestamp: number;
   bodies: BodyState[];
+  isDelta?: boolean;
 }
 
 export interface RoomCreatedMessage {
@@ -104,6 +107,7 @@ export interface RoomCreatedMessage {
 export interface SimulationStartedMessage {
   type: MessageType.SIMULATION_STARTED;
   snapshot: RoomSnapshot;
+  bodyIdMap?: Record<string, number>;
 }
 
 export interface ErrorMessage {

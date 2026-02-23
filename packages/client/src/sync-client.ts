@@ -1,5 +1,6 @@
 import type {
   BodyDescriptor,
+  BodyState,
   RoomSnapshot,
   InputAction,
   ClientMessage,
@@ -10,6 +11,10 @@ import {
   MessageType,
   encodeMessage,
   decodeServerMessage,
+  FIELD_POSITION,
+  FIELD_ROTATION,
+  FIELD_LIN_VEL,
+  FIELD_ANG_VEL,
 } from '@rapierphysicsplugin/shared';
 import { ClockSyncClient } from './clock-sync.js';
 import { StateReconciler } from './state-reconciler.js';
@@ -28,6 +33,13 @@ export class PhysicsSyncClient {
   private inputManager: InputManager;
   private clientId: string | null = null;
   private roomId: string | null = null;
+
+  // Body ID mapping for numeric wire format
+  private indexToId: Map<number, string> = new Map();
+  private idToIndex: Map<string, number> = new Map();
+
+  // Full state map — merges partial delta updates into complete body states
+  private fullStateMap: Map<string, BodyState> = new Map();
 
   private _simulationRunning = false;
   private _bytesSent = 0;
@@ -70,7 +82,7 @@ export class PhysicsSyncClient {
       this.ws.onmessage = (event) => {
         const buf = new Uint8Array(event.data as ArrayBuffer);
         this._bytesReceived += buf.byteLength;
-        const message = decodeServerMessage(buf);
+        const message = decodeServerMessage(buf, this.indexToId);
         this.handleMessage(message);
       };
 
@@ -128,6 +140,9 @@ export class PhysicsSyncClient {
     this.roomId = null;
     this.inputManager.stop();
     this.reconciler.clear();
+    this.fullStateMap.clear();
+    this.indexToId.clear();
+    this.idToIndex.clear();
   }
 
   sendInput(actions: InputAction[]): void {
@@ -179,14 +194,77 @@ export class PhysicsSyncClient {
     return this._simulationRunning;
   }
 
+  /** Total number of bodies the client knows about (including sleeping/unchanged ones) */
+  get totalBodyCount(): number {
+    return this.fullStateMap.size;
+  }
+
   disconnect(): void {
     this.clockSync.stop();
     this.inputManager.stop();
     this.reconciler.clear();
+    this.fullStateMap.clear();
+    this.indexToId.clear();
+    this.idToIndex.clear();
     this.ws?.close();
     this.ws = null;
     this.roomId = null;
     this.clientId = null;
+  }
+
+  private initBodyIdMap(bodyIdMap: Record<string, number>): void {
+    this.indexToId.clear();
+    this.idToIndex.clear();
+    for (const [id, index] of Object.entries(bodyIdMap)) {
+      this.indexToId.set(index, id);
+      this.idToIndex.set(id, index);
+    }
+  }
+
+  private addBodyIdMapping(id: string, index: number): void {
+    this.indexToId.set(index, id);
+    this.idToIndex.set(id, index);
+  }
+
+  private initFullState(bodies: BodyState[]): void {
+    this.fullStateMap.clear();
+    for (const body of bodies) {
+      this.fullStateMap.set(body.id, { ...body });
+    }
+  }
+
+  /**
+   * Merge partial delta bodies into the full state map.
+   * Returns the merged (complete) body states for the bodies that were in the delta.
+   */
+  private mergeDelta(bodies: BodyState[]): BodyState[] {
+    const merged: BodyState[] = [];
+    for (const body of bodies) {
+      const existing = this.fullStateMap.get(body.id);
+      if (existing) {
+        const mask = body.fieldMask;
+        if (mask !== undefined) {
+          if (mask & FIELD_POSITION) existing.position = body.position;
+          if (mask & FIELD_ROTATION) existing.rotation = body.rotation;
+          if (mask & FIELD_LIN_VEL) existing.linVel = body.linVel;
+          if (mask & FIELD_ANG_VEL) existing.angVel = body.angVel;
+        } else {
+          // No fieldMask = full update
+          existing.position = body.position;
+          existing.rotation = body.rotation;
+          existing.linVel = body.linVel;
+          existing.angVel = body.angVel;
+        }
+        merged.push(existing);
+      } else {
+        // New body — add to map
+        const newBody: BodyState = { ...body };
+        delete newBody.fieldMask;
+        this.fullStateMap.set(body.id, newBody);
+        merged.push(newBody);
+      }
+    }
+    return merged;
   }
 
   private handleMessage(message: ServerMessage): void {
@@ -205,6 +283,14 @@ export class PhysicsSyncClient {
         this.clientId = message.clientId;
         this._simulationRunning = message.simulationRunning;
 
+        // Initialize body ID mapping
+        if (message.bodyIdMap) {
+          this.initBodyIdMap(message.bodyIdMap);
+        }
+
+        // Initialize full state from snapshot
+        this.initFullState(message.snapshot.bodies);
+
         // Start input manager
         this.inputManager.start(
           (input) => this.sendClientInput(input),
@@ -216,10 +302,13 @@ export class PhysicsSyncClient {
         break;
 
       case MessageType.ROOM_STATE: {
+        // Merge partial delta into full state map
+        const mergedBodies = this.mergeDelta(message.bodies);
+
         const snapshot: RoomSnapshot = {
           tick: message.tick,
           timestamp: message.timestamp,
-          bodies: message.bodies,
+          bodies: mergedBodies,
         };
 
         // Process through reconciler
@@ -233,12 +322,17 @@ export class PhysicsSyncClient {
       }
 
       case MessageType.ADD_BODY:
+        // Update body ID mapping
+        if (message.bodyIndex !== undefined) {
+          this.addBodyIdMapping(message.body.id, message.bodyIndex);
+        }
         for (const cb of this.bodyAddedCallbacks) {
           cb(message.body);
         }
         break;
 
       case MessageType.REMOVE_BODY:
+        this.fullStateMap.delete(message.bodyId);
         for (const cb of this.bodyRemovedCallbacks) {
           cb(message.bodyId);
         }
@@ -247,6 +341,16 @@ export class PhysicsSyncClient {
       case MessageType.SIMULATION_STARTED: {
         this._simulationRunning = true;
         this.reconciler.clear();
+
+        // Re-initialize body ID mapping if provided
+        const simMsg = message as ServerMessage & { bodyIdMap?: Record<string, number> };
+        if (simMsg.bodyIdMap) {
+          this.initBodyIdMap(simMsg.bodyIdMap);
+        }
+
+        // Re-initialize full state from fresh snapshot
+        this.initFullState(message.snapshot.bodies);
+
         const startSnapshot = message.snapshot;
         for (const cb of this.simulationStartedCallbacks) {
           cb(startSnapshot);

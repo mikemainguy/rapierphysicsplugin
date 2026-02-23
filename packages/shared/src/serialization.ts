@@ -6,9 +6,12 @@ import { encodeRoomState, decodeRoomState } from './binary-state-codec.js';
 const OPCODE_ROOM_STATE = 0x01;
 const OPCODE_MSGPACK = 0x02;
 
-export function encodeMessage(message: ClientMessage | ServerMessage): Uint8Array {
+export function encodeMessage(
+  message: ClientMessage | ServerMessage,
+  idToIndex?: Map<string, number>,
+): Uint8Array {
   if ('type' in message && message.type === MessageType.ROOM_STATE) {
-    return encodeRoomState(message as RoomStateMessage);
+    return encodeRoomState(message as RoomStateMessage, idToIndex);
   }
   const packed = pack(message);
   const result = new Uint8Array(1 + packed.length);
@@ -17,9 +20,12 @@ export function encodeMessage(message: ClientMessage | ServerMessage): Uint8Arra
   return result;
 }
 
-export function decodeMessage(data: Uint8Array): ClientMessage | ServerMessage {
+export function decodeMessage(
+  data: Uint8Array,
+  indexToId?: Map<number, string>,
+): ClientMessage | ServerMessage {
   if (data[0] === OPCODE_ROOM_STATE) {
-    return decodeRoomState(data);
+    return decodeRoomState(data, indexToId);
   }
   return unpack(data.subarray(1)) as ClientMessage | ServerMessage;
 }
@@ -28,6 +34,9 @@ export function decodeClientMessage(data: Uint8Array): ClientMessage {
   return decodeMessage(data) as ClientMessage;
 }
 
-export function decodeServerMessage(data: Uint8Array): ServerMessage {
-  return decodeMessage(data) as ServerMessage;
+export function decodeServerMessage(
+  data: Uint8Array,
+  indexToId?: Map<number, string>,
+): ServerMessage {
+  return decodeMessage(data, indexToId) as ServerMessage;
 }

@@ -8,6 +8,7 @@ import {
   BROADCAST_INTERVAL,
   MessageType,
   encodeMessage,
+  encodeRoomState,
 } from '@rapierphysicsplugin/shared';
 import { PhysicsWorld } from './physics-world.js';
 import { SimulationLoop } from './simulation-loop.js';
@@ -43,7 +44,7 @@ export class Room {
     this.inputBuffers.set(conn.id, new InputBuffer());
     conn.roomId = this.id;
 
-    // Send full state snapshot to the joining client
+    // Send full state snapshot to the joining client, including body ID mapping
     const snapshot = this.stateManager.createSnapshot(this.physicsWorld, this.currentTick);
     conn.send(encodeMessage({
       type: MessageType.ROOM_JOINED,
@@ -51,6 +52,7 @@ export class Room {
       snapshot,
       clientId: conn.id,
       simulationRunning: this.simulationLoop.isRunning,
+      bodyIdMap: this.stateManager.getIdToIndexRecord(),
     }));
   }
 
@@ -67,11 +69,13 @@ export class Room {
 
   addBody(descriptor: BodyDescriptor): string {
     const id = this.physicsWorld.addBody(descriptor);
+    const bodyIndex = this.stateManager.ensureBodyIndex(id);
 
-    // Notify all clients
+    // Notify all clients (include the numeric index for the new body)
     this.broadcast(encodeMessage({
       type: MessageType.ADD_BODY,
       body: descriptor,
+      bodyIndex,
     }));
 
     return id;
@@ -126,12 +130,17 @@ export class Room {
 
     if (delta.bodies.length === 0) return;
 
-    const message = encodeMessage({
-      type: MessageType.ROOM_STATE,
-      tick: delta.tick,
-      timestamp: delta.timestamp,
-      bodies: delta.bodies,
-    });
+    // Encode directly with ID mapping for numeric body indices
+    const message = encodeRoomState(
+      {
+        type: MessageType.ROOM_STATE,
+        tick: delta.tick,
+        timestamp: delta.timestamp,
+        bodies: delta.bodies,
+        isDelta: true,
+      },
+      this.stateManager.getIdToIndexMap(),
+    );
 
     this.broadcast(message);
   }
@@ -164,11 +173,12 @@ export class Room {
     // Start simulation loop
     this.simulationLoop.start();
 
-    // Broadcast fresh snapshot to all clients
+    // Broadcast fresh snapshot to all clients (includes updated body ID mapping)
     const snapshot = this.stateManager.createSnapshot(this.physicsWorld, this.currentTick);
     this.broadcast(encodeMessage({
       type: MessageType.SIMULATION_STARTED,
       snapshot,
+      bodyIdMap: this.stateManager.getIdToIndexRecord(),
     }));
   }
 
