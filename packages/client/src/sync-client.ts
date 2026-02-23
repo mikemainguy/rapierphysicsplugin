@@ -30,6 +30,8 @@ export class PhysicsSyncClient {
   private roomId: string | null = null;
 
   private _simulationRunning = false;
+  private _bytesSent = 0;
+  private _bytesReceived = 0;
   private stateUpdateCallbacks: StateUpdateCallback[] = [];
   private bodyAddedCallbacks: BodyAddedCallback[] = [];
   private bodyRemovedCallbacks: BodyRemovedCallback[] = [];
@@ -55,16 +57,19 @@ export class PhysicsSyncClient {
       this.ws = new WebSocket(url);
 
       this.ws.onopen = () => {
-        this.clockSync.start((data) => this.ws?.send(data));
+        this.clockSync.start((data) => {
+          this._bytesSent += data.length;
+          this.ws?.send(data);
+        });
         this.connectResolve?.();
         this.connectResolve = null;
         this.connectReject = null;
       };
 
       this.ws.onmessage = (event) => {
-        const message = decodeServerMessage(
-          typeof event.data === 'string' ? event.data : event.data.toString()
-        );
+        const raw = typeof event.data === 'string' ? event.data : event.data.toString();
+        this._bytesReceived += raw.length;
+        const message = decodeServerMessage(raw);
         this.handleMessage(message);
       };
 
@@ -264,7 +269,9 @@ export class PhysicsSyncClient {
 
   private send(message: ClientMessage): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(encodeMessage(message));
+      const encoded = encodeMessage(message);
+      this._bytesSent += encoded.length;
+      this.ws.send(encoded);
     }
   }
 
@@ -286,5 +293,13 @@ export class PhysicsSyncClient {
 
   getRoomId(): string | null {
     return this.roomId;
+  }
+
+  get bytesSent(): number {
+    return this._bytesSent;
+  }
+
+  get bytesReceived(): number {
+    return this._bytesReceived;
   }
 }

@@ -54,7 +54,7 @@ async function main() {
   const debugEl = document.getElementById('debug')!;
 
   try {
-    await syncClient.connect('ws://localhost:8080');
+    await syncClient.connect('wss://rapier-server.flatearthdefense.com');
     debugEl.textContent = 'Connected. Joining room...';
   } catch {
     debugEl.textContent = 'Failed to connect to ws://localhost:8080\nMake sure the server is running.';
@@ -173,11 +173,17 @@ async function main() {
     const rtt = clockSync.getRTT();
     const offset = clockSync.getClockOffset();
     const tick = state.tick;
+    const fps = engine.getFps();
+    const sent = syncClient.bytesSent;
+    const recv = syncClient.bytesReceived;
     debugEl.textContent =
+      `FPS: ${fps.toFixed(0)}\n` +
       `Tick: ${tick}\n` +
       `RTT: ${rtt.toFixed(1)} ms\n` +
       `Clock offset: ${offset.toFixed(1)} ms\n` +
       `Bodies: ${state.bodies.length}\n` +
+      `WS sent: ${formatBytes(sent)}\n` +
+      `WS recv: ${formatBytes(recv)}\n` +
       `Client: ${syncClient.getClientId() ?? '?'}`;
   });
 
@@ -400,6 +406,12 @@ function createMeshFromDescriptor(scene: Scene, descriptor: BodyDescriptor): Mes
 
   meshMap.set(descriptor.id, mesh);
   return mesh;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
 }
 
 function updateMesh(body: BodyState) {
