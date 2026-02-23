@@ -30,11 +30,80 @@
       pointer-events: none;
       white-space: pre;
     }
+    #simButton {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 10px 24px;
+      font-size: 16px;
+      font-family: sans-serif;
+      font-weight: bold;
+      cursor: pointer;
+      border: none;
+      border-radius: 6px;
+      background: #2196f3;
+      color: #fff;
+    }
+    #simButton:hover {
+      background: #1976d2;
+    }
+    #spawnPanel {
+      position: absolute;
+      top: 54px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-family: sans-serif;
+      font-size: 14px;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    #spawnPanel label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    #spawnPanel input[type="number"] {
+      width: 48px;
+      padding: 2px 4px;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background: #222;
+      color: #fff;
+      font-size: 14px;
+      text-align: center;
+    }
+    #spawnButton {
+      padding: 6px 14px;
+      font-size: 14px;
+      font-family: sans-serif;
+      font-weight: bold;
+      cursor: pointer;
+      border: none;
+      border-radius: 4px;
+      background: #4caf50;
+      color: #fff;
+      margin-top: 2px;
+    }
+    #spawnButton:hover {
+      background: #388e3c;
+    }
   </style>
 </head>
 <body>
   <canvas id="renderCanvas"></canvas>
   <div id="debug">Connecting...</div>
+  <button id="simButton">Start</button>
+  <div id="spawnPanel">
+    <label>Boxes <input type="number" id="spawnBoxes" value="1" min="0" max="50"></label>
+    <label>Spheres <input type="number" id="spawnSpheres" value="1" min="0" max="50"></label>
+    <label>Capsules <input type="number" id="spawnCapsules" value="1" min="0" max="50"></label>
+    <button id="spawnButton">Spawn</button>
+  </div>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

@@ -90,6 +90,99 @@ describe('Room', () => {
 
     room.destroy();
   });
+
+  it('should not auto-start simulation when a client joins', () => {
+    const room = new Room('test', rapier);
+    room.loadInitialState([makeBox('box1', 5)]);
+
+    const mockConn = {
+      id: 'client1',
+      roomId: null as string | null,
+      ws: { readyState: 1, OPEN: 1, send: () => {} } as any,
+      send: () => {},
+      rtt: 0,
+      clockOffset: 0,
+      lastAcknowledgedTick: 0,
+      inputSequence: 0,
+      updateClockSync: () => {},
+      mapClientTickToServerTick: () => 0,
+    };
+
+    room.addClient(mockConn as any);
+    expect(room.isSimulationRunning).toBe(false);
+
+    room.destroy();
+  });
+
+  it('should start simulation on startSimulation call', () => {
+    const room = new Room('test', rapier);
+    room.loadInitialState([makeBox('box1', 5)]);
+
+    const sentMessages: string[] = [];
+    const mockConn = {
+      id: 'client1',
+      roomId: null as string | null,
+      ws: { readyState: 1, OPEN: 1, send: () => {} } as any,
+      send: (msg: string) => { sentMessages.push(msg); },
+      rtt: 0,
+      clockOffset: 0,
+      lastAcknowledgedTick: 0,
+      inputSequence: 0,
+      updateClockSync: () => {},
+      mapClientTickToServerTick: () => 0,
+    };
+
+    room.addClient(mockConn as any);
+    expect(room.isSimulationRunning).toBe(false);
+
+    room.startSimulation();
+    expect(room.isSimulationRunning).toBe(true);
+
+    // Should have broadcast SIMULATION_STARTED
+    const startedMsg = sentMessages.find(m => m.includes('simulation_started'));
+    expect(startedMsg).toBeDefined();
+
+    room.destroy();
+  });
+
+  it('should reset physics on startSimulation when already running', () => {
+    const room = new Room('test', rapier);
+    room.loadInitialState([makeBox('box1', 10)]);
+
+    const mockConn = {
+      id: 'client1',
+      roomId: null as string | null,
+      ws: { readyState: 1, OPEN: 1, send: () => {} } as any,
+      send: () => {},
+      rtt: 0,
+      clockOffset: 0,
+      lastAcknowledgedTick: 0,
+      inputSequence: 0,
+      updateClockSync: () => {},
+      mapClientTickToServerTick: () => 0,
+    };
+
+    room.addClient(mockConn as any);
+    room.startSimulation();
+
+    // Run some ticks so physics changes
+    for (let i = 0; i < 60; i++) {
+      room.tick();
+    }
+    expect(room.tickNumber).toBeGreaterThan(0);
+    const stateBefore = room.getSnapshot();
+    const box = stateBefore.bodies.find(b => b.id === 'box1')!;
+    expect(box.position.y).not.toBeCloseTo(10);
+
+    // Reset
+    room.startSimulation();
+    expect(room.tickNumber).toBe(0);
+    const stateAfter = room.getSnapshot();
+    const boxAfter = stateAfter.bodies.find(b => b.id === 'box1')!;
+    expect(boxAfter.position.y).toBeCloseTo(10);
+
+    room.destroy();
+  });
 });
 
 describe('RoomManager', () => {

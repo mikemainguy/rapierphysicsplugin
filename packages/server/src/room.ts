@@ -22,6 +22,7 @@ export class Room {
   private stateManager: StateManager;
   private clients: Map<string, ClientConnection> = new Map();
   private inputBuffers: Map<string, InputBuffer> = new Map();
+  private initialBodies: BodyDescriptor[] = [];
   private currentTick = 0;
   private ticksSinceLastBroadcast = 0;
 
@@ -33,6 +34,7 @@ export class Room {
   }
 
   loadInitialState(bodies: BodyDescriptor[]): void {
+    this.initialBodies = bodies;
     this.physicsWorld.loadState(bodies);
   }
 
@@ -48,12 +50,8 @@ export class Room {
       roomId: this.id,
       snapshot,
       clientId: conn.id,
+      simulationRunning: this.simulationLoop.isRunning,
     }));
-
-    // Start simulation if this is the first client
-    if (this.clients.size === 1) {
-      this.simulationLoop.start();
-    }
   }
 
   removeClient(conn: ClientConnection): void {
@@ -146,6 +144,36 @@ export class Room {
 
   getSnapshot(): RoomSnapshot {
     return this.stateManager.createSnapshot(this.physicsWorld, this.currentTick);
+  }
+
+  startSimulation(): void {
+    // If already running, stop and reset
+    if (this.simulationLoop.isRunning) {
+      this.simulationLoop.stop();
+    }
+
+    // Reset physics world to initial state
+    this.physicsWorld.reset(this.initialBodies);
+    this.currentTick = 0;
+    this.ticksSinceLastBroadcast = 0;
+    this.stateManager.clear();
+    for (const [, buffer] of this.inputBuffers) {
+      buffer.clear();
+    }
+
+    // Start simulation loop
+    this.simulationLoop.start();
+
+    // Broadcast fresh snapshot to all clients
+    const snapshot = this.stateManager.createSnapshot(this.physicsWorld, this.currentTick);
+    this.broadcast(encodeMessage({
+      type: MessageType.SIMULATION_STARTED,
+      snapshot,
+    }));
+  }
+
+  get isSimulationRunning(): boolean {
+    return this.simulationLoop.isRunning;
   }
 
   get clientCount(): number {

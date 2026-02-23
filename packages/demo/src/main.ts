@@ -13,7 +13,7 @@ import {
   Mesh,
 } from '@babylonjs/core';
 import { RapierPlugin, PhysicsSyncClient } from '@rapierphysicsplugin/client';
-import type { BodyState, RoomSnapshot } from '@rapierphysicsplugin/shared';
+import type { BodyDescriptor, BodyState, BoxShapeParams, CapsuleShapeParams, RoomSnapshot, SphereShapeParams } from '@rapierphysicsplugin/shared';
 
 // Body ID → BabylonJS mesh
 const meshMap = new Map<string, Mesh>();
@@ -77,6 +77,90 @@ async function main() {
 
   // 6. Create meshes from snapshot
   createMeshesFromSnapshot(scene, snapshot);
+
+  // 6b. Wire up Start/Reset button
+  const simButton = document.getElementById('simButton') as HTMLButtonElement;
+  simButton.textContent = syncClient.simulationRunning ? 'Reset' : 'Start';
+
+  simButton.addEventListener('click', () => {
+    syncClient.startSimulation();
+  });
+
+  syncClient.onSimulationStarted((freshSnapshot) => {
+    // Dispose all existing meshes
+    for (const [, mesh] of meshMap) {
+      mesh.dispose();
+    }
+    meshMap.clear();
+
+    // Recreate from fresh snapshot
+    createMeshesFromSnapshot(scene, freshSnapshot);
+    simButton.textContent = 'Reset';
+  });
+
+  // 6c. Wire up onBodyAdded to create meshes for bodies added by any client
+  syncClient.onBodyAdded((descriptor) => {
+    if (!meshMap.has(descriptor.id)) {
+      createMeshFromDescriptor(scene, descriptor);
+    }
+  });
+
+  // 6d. Wire up Spawn button
+  const spawnButton = document.getElementById('spawnButton') as HTMLButtonElement;
+  const spawnBoxesInput = document.getElementById('spawnBoxes') as HTMLInputElement;
+  const spawnSpheresInput = document.getElementById('spawnSpheres') as HTMLInputElement;
+  const spawnCapsulesInput = document.getElementById('spawnCapsules') as HTMLInputElement;
+
+  spawnButton.addEventListener('click', () => {
+    const ts = Date.now();
+    const numBoxes = Math.max(0, parseInt(spawnBoxesInput.value) || 0);
+    const numSpheres = Math.max(0, parseInt(spawnSpheresInput.value) || 0);
+    const numCapsules = Math.max(0, parseInt(spawnCapsulesInput.value) || 0);
+
+    const randomPos = () => ({
+      x: Math.random() * 10 - 5,
+      y: Math.random() * 10 + 5,
+      z: Math.random() * 10 - 5,
+    });
+    const identityRot = { x: 0, y: 0, z: 0, w: 1 };
+
+    for (let i = 0; i < numBoxes; i++) {
+      syncClient.addBody({
+        id: `box-${ts}-${i}`,
+        shape: { type: 'box', params: { halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } },
+        motionType: 'dynamic',
+        position: randomPos(),
+        rotation: identityRot,
+        mass: 1,
+        friction: 0.5,
+        restitution: 0.3,
+      });
+    }
+    for (let i = 0; i < numSpheres; i++) {
+      syncClient.addBody({
+        id: `sphere-${ts}-${i}`,
+        shape: { type: 'sphere', params: { radius: 0.5 } },
+        motionType: 'dynamic',
+        position: randomPos(),
+        rotation: identityRot,
+        mass: 1,
+        friction: 0.5,
+        restitution: 0.3,
+      });
+    }
+    for (let i = 0; i < numCapsules; i++) {
+      syncClient.addBody({
+        id: `capsule-${ts}-${i}`,
+        shape: { type: 'capsule', params: { halfHeight: 0.5, radius: 0.3 } },
+        motionType: 'dynamic',
+        position: randomPos(),
+        rotation: identityRot,
+        mass: 1,
+        friction: 0.5,
+        restitution: 0.3,
+      });
+    }
+  });
 
   // 7. Listen for state updates
   syncClient.onStateUpdate((state: RoomSnapshot) => {
@@ -263,6 +347,59 @@ function createRampMesh(scene: Scene, body: BodyState) {
   ramp.material = mat;
 
   meshMap.set(body.id, ramp);
+}
+
+function createMeshFromDescriptor(scene: Scene, descriptor: BodyDescriptor): Mesh {
+  let mesh: Mesh;
+  let colorKey: string;
+
+  switch (descriptor.shape.type) {
+    case 'box': {
+      const p = descriptor.shape.params as BoxShapeParams;
+      mesh = MeshBuilder.CreateBox(descriptor.id, {
+        width: p.halfExtents.x * 2,
+        height: p.halfExtents.y * 2,
+        depth: p.halfExtents.z * 2,
+      }, scene);
+      colorKey = 'box';
+      break;
+    }
+    case 'sphere': {
+      const p = descriptor.shape.params as SphereShapeParams;
+      mesh = MeshBuilder.CreateSphere(descriptor.id, { diameter: p.radius * 2 }, scene);
+      colorKey = 'sphere';
+      break;
+    }
+    case 'capsule': {
+      const p = descriptor.shape.params as CapsuleShapeParams;
+      mesh = MeshBuilder.CreateCapsule(descriptor.id, {
+        height: p.halfHeight * 2 + p.radius * 2,
+        radius: p.radius,
+      }, scene);
+      colorKey = 'capsule';
+      break;
+    }
+    default:
+      mesh = MeshBuilder.CreateBox(descriptor.id, { size: 1 }, scene);
+      colorKey = 'box';
+  }
+
+  mesh.position.set(descriptor.position.x, descriptor.position.y, descriptor.position.z);
+  mesh.rotationQuaternion = new Quaternion(
+    descriptor.rotation.x,
+    descriptor.rotation.y,
+    descriptor.rotation.z,
+    descriptor.rotation.w,
+  );
+  mesh.metadata = { bodyId: descriptor.id };
+
+  const mat = new StandardMaterial(`${descriptor.id}Mat`, scene);
+  mat.diffuseColor = shapeColors[colorKey] ?? new Color3(0.5, 0.5, 0.5);
+  mat.specularColor = new Color3(0.3, 0.3, 0.3);
+  mesh.material = mat;
+
+  meshMap.set(descriptor.id, mesh);
+  return mesh;
 }
 
 function updateMesh(body: BodyState) {

@@ -160,4 +160,38 @@ describe('PhysicsWorld', () => {
     ]);
     expect(world.bodyCount).toBe(3);
   });
+
+  it('should reset world with new body descriptors', () => {
+    world.loadState([makeBox('box1', 5), makeBox('box2', 10)]);
+    expect(world.bodyCount).toBe(2);
+
+    // Step to move bodies
+    for (let i = 0; i < 10; i++) {
+      world.step();
+    }
+    const stateBeforeReset = world.getBodyState('box1')!;
+    expect(stateBeforeReset.position.y).not.toBeCloseTo(5);
+
+    // Reset with same descriptors
+    world.reset([makeBox('box1', 5), makeBox('box2', 10)]);
+    expect(world.bodyCount).toBe(2);
+
+    // Bodies should be back at initial positions
+    const stateAfterReset = world.getBodyState('box1')!;
+    expect(stateAfterReset.position.y).toBeCloseTo(5);
+    const box2State = world.getBodyState('box2')!;
+    expect(box2State.position.y).toBeCloseTo(10);
+  });
+
+  it('should reset with different body descriptors', () => {
+    world.loadState([makeBox('box1', 5)]);
+    expect(world.bodyCount).toBe(1);
+
+    world.reset([makeBox('boxA', 3), makeBox('boxB', 7), makeBox('boxC', 12)]);
+    expect(world.bodyCount).toBe(3);
+    expect(world.hasBody('box1')).toBe(false);
+    expect(world.hasBody('boxA')).toBe(true);
+    expect(world.hasBody('boxB')).toBe(true);
+    expect(world.hasBody('boxC')).toBe(true);
+  });
 });

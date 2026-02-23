@@ -254,6 +254,18 @@ export class PhysicsWorld {
     }
   }
 
+  reset(bodies: BodyDescriptor[]): void {
+    // Remove all existing bodies
+    for (const [id, body] of this.bodyMap) {
+      this.world.removeRigidBody(body);
+    }
+    this.bodyMap.clear();
+    this.colliderMap.clear();
+
+    // Reload from descriptors
+    this.loadState(bodies);
+  }
+
   hasBody(id: string): boolean {
     return this.bodyMap.has(id);
   }

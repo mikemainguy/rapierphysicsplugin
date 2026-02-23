@@ -159,6 +159,15 @@ export class PhysicsServer {
         break;
       }
 
+      case MessageType.START_SIMULATION: {
+        if (!conn.roomId) return;
+        const room = this.roomManager.getRoom(conn.roomId);
+        if (room) {
+          room.startSimulation();
+        }
+        break;
+      }
+
       case MessageType.BODY_EVENT: {
         if (!conn.roomId) return;
         // Rebroadcast body events to all clients in the room

@@ -19,6 +19,7 @@ import { InputManager } from './input-manager.js';
 type StateUpdateCallback = (state: RoomSnapshot) => void;
 type BodyAddedCallback = (body: BodyDescriptor) => void;
 type BodyRemovedCallback = (bodyId: string) => void;
+type SimulationStartedCallback = (snapshot: RoomSnapshot) => void;
 
 export class PhysicsSyncClient {
   private ws: WebSocket | null = null;
@@ -28,9 +29,11 @@ export class PhysicsSyncClient {
   private clientId: string | null = null;
   private roomId: string | null = null;
 
+  private _simulationRunning = false;
   private stateUpdateCallbacks: StateUpdateCallback[] = [];
   private bodyAddedCallbacks: BodyAddedCallback[] = [];
   private bodyRemovedCallbacks: BodyRemovedCallback[] = [];
+  private simulationStartedCallbacks: SimulationStartedCallback[] = [];
 
   private connectResolve: (() => void) | null = null;
   private connectReject: ((err: Error) => void) | null = null;
@@ -157,6 +160,19 @@ export class PhysicsSyncClient {
     this.bodyRemovedCallbacks.push(callback);
   }
 
+  onSimulationStarted(callback: SimulationStartedCallback): void {
+    this.simulationStartedCallbacks.push(callback);
+  }
+
+  startSimulation(): void {
+    if (!this.ws) return;
+    this.send({ type: MessageType.START_SIMULATION });
+  }
+
+  get simulationRunning(): boolean {
+    return this._simulationRunning;
+  }
+
   disconnect(): void {
     this.clockSync.stop();
     this.inputManager.stop();
@@ -181,6 +197,7 @@ export class PhysicsSyncClient {
       case MessageType.ROOM_JOINED:
         this.roomId = message.roomId;
         this.clientId = message.clientId;
+        this._simulationRunning = message.simulationRunning;
 
         // Start input manager
         this.inputManager.start(
@@ -220,6 +237,16 @@ export class PhysicsSyncClient {
           cb(message.bodyId);
         }
         break;
+
+      case MessageType.SIMULATION_STARTED: {
+        this._simulationRunning = true;
+        this.reconciler.clear();
+        const startSnapshot = message.snapshot;
+        for (const cb of this.simulationStartedCallbacks) {
+          cb(startSnapshot);
+        }
+        break;
+      }
 
       case MessageType.ERROR:
         console.error(`Server error: ${message.message}`);

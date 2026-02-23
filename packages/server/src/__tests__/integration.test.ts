@@ -85,7 +85,7 @@ describe('Integration: Server with WebSocket clients', () => {
     ws.close();
   });
 
-  it('should send state updates after joining a room', async () => {
+  it('should send state updates after starting simulation', async () => {
     server = new PhysicsServer(RAPIER);
     await server.start(TEST_PORT + 1);
 
@@ -112,6 +112,10 @@ describe('Integration: Server with WebSocket clients', () => {
       roomId: 'state-room',
     }));
     await waitForMessage(ws, MessageType.ROOM_JOINED);
+
+    // Start simulation (no longer auto-starts on join)
+    ws.send(encodeMessage({ type: MessageType.START_SIMULATION }));
+    await waitForMessage(ws, MessageType.SIMULATION_STARTED);
 
     // Wait for a state update — should arrive within a few seconds
     const stateMsg = await waitForMessage(ws, MessageType.ROOM_STATE) as RoomStateMessage;
@@ -153,6 +157,11 @@ describe('Integration: Server with WebSocket clients', () => {
     ws2.send(encodeMessage({ type: MessageType.JOIN_ROOM, roomId: 'shared-room' }));
     const joined2 = await waitForMessage(ws2, MessageType.ROOM_JOINED) as RoomJoinedMessage;
     expect(joined2.snapshot.bodies).toHaveLength(1);
+
+    // Start simulation (no longer auto-starts on join)
+    ws1.send(encodeMessage({ type: MessageType.START_SIMULATION }));
+    await waitForMessage(ws1, MessageType.SIMULATION_STARTED);
+    await waitForMessage(ws2, MessageType.SIMULATION_STARTED);
 
     // Client 1 sends input
     ws1.send(encodeMessage({

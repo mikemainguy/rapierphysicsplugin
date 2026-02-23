@@ -19,6 +19,8 @@ export enum MessageType {
   REMOVE_BODY = 'remove_body',
   CREATE_ROOM = 'create_room',
   ROOM_CREATED = 'room_created',
+  START_SIMULATION = 'start_simulation',
+  SIMULATION_STARTED = 'simulation_started',
   ERROR = 'error',
 }
 
@@ -60,6 +62,10 @@ export interface CreateRoomMessage {
   gravity?: Vec3;
 }
 
+export interface StartSimulationMessage {
+  type: MessageType.START_SIMULATION;
+}
+
 export interface BodyEventMessage {
   type: MessageType.BODY_EVENT;
   bodyId: string;
@@ -80,6 +86,7 @@ export interface RoomJoinedMessage {
   roomId: string;
   snapshot: RoomSnapshot;
   clientId: string;
+  simulationRunning: boolean;
 }
 
 export interface RoomStateMessage {
@@ -92,6 +99,11 @@ export interface RoomStateMessage {
 export interface RoomCreatedMessage {
   type: MessageType.ROOM_CREATED;
   roomId: string;
+}
+
+export interface SimulationStartedMessage {
+  type: MessageType.SIMULATION_STARTED;
+  snapshot: RoomSnapshot;
 }
 
 export interface ErrorMessage {
@@ -107,6 +119,7 @@ export type ClientMessage =
   | AddBodyMessage
   | RemoveBodyMessage
   | CreateRoomMessage
+  | StartSimulationMessage
   | BodyEventMessage;
 
 export type ServerMessage =
@@ -114,6 +127,7 @@ export type ServerMessage =
   | RoomJoinedMessage
   | RoomStateMessage
   | RoomCreatedMessage
+  | SimulationStartedMessage
   | ErrorMessage
   | AddBodyMessage
   | RemoveBodyMessage
