@@ -55,10 +55,11 @@ export class PhysicsSyncClient {
       this.connectReject = reject;
 
       this.ws = new WebSocket(url);
+      this.ws.binaryType = 'arraybuffer';
 
       this.ws.onopen = () => {
         this.clockSync.start((data) => {
-          this._bytesSent += data.length;
+          this._bytesSent += data.byteLength;
           this.ws?.send(data);
         });
         this.connectResolve?.();
@@ -67,9 +68,9 @@ export class PhysicsSyncClient {
       };
 
       this.ws.onmessage = (event) => {
-        const raw = typeof event.data === 'string' ? event.data : event.data.toString();
-        this._bytesReceived += raw.length;
-        const message = decodeServerMessage(raw);
+        const buf = new Uint8Array(event.data as ArrayBuffer);
+        this._bytesReceived += buf.byteLength;
+        const message = decodeServerMessage(buf);
         this.handleMessage(message);
       };
 
@@ -270,7 +271,7 @@ export class PhysicsSyncClient {
   private send(message: ClientMessage): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       const encoded = encodeMessage(message);
-      this._bytesSent += encoded.length;
+      this._bytesSent += encoded.byteLength;
       this.ws.send(encoded);
     }
   }

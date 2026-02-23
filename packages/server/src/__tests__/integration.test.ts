@@ -24,7 +24,7 @@ function waitForMessage(ws: WebSocket, type: MessageType, timeoutMs = 5000): Pro
     const timeout = setTimeout(() => reject(new Error(`Timeout waiting for ${type}`)), timeoutMs);
 
     const handler = (data: Buffer) => {
-      const msg = decodeServerMessage(data.toString());
+      const msg = decodeServerMessage(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
       if (msg.type === type) {
         clearTimeout(timeout);
         ws.off('message', handler);

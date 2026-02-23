@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Room, RoomManager } from '../room.js';
-import type { BodyDescriptor } from '@rapierphysicsplugin/shared';
+import { decodeMessage } from '@rapierphysicsplugin/shared';
+import type { BodyDescriptor, ServerMessage } from '@rapierphysicsplugin/shared';
 
 describe('Room', () => {
   let rapier: typeof RAPIER;
@@ -118,12 +119,12 @@ describe('Room', () => {
     const room = new Room('test', rapier);
     room.loadInitialState([makeBox('box1', 5)]);
 
-    const sentMessages: string[] = [];
+    const sentMessages: ServerMessage[] = [];
     const mockConn = {
       id: 'client1',
       roomId: null as string | null,
       ws: { readyState: 1, OPEN: 1, send: () => {} } as any,
-      send: (msg: string) => { sentMessages.push(msg); },
+      send: (msg: Uint8Array) => { sentMessages.push(decodeMessage(msg) as ServerMessage); },
       rtt: 0,
       clockOffset: 0,
       lastAcknowledgedTick: 0,
@@ -139,7 +140,7 @@ describe('Room', () => {
     expect(room.isSimulationRunning).toBe(true);
 
     // Should have broadcast SIMULATION_STARTED
-    const startedMsg = sentMessages.find(m => m.includes('simulation_started'));
+    const startedMsg = sentMessages.find(m => m.type === 'simulation_started');
     expect(startedMsg).toBeDefined();
 
     room.destroy();

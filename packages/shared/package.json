@@ -10,5 +10,8 @@
   },
   "devDependencies": {
     "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "msgpackr": "^1.11.8"
   }
 }

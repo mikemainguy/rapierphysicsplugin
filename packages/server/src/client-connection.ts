@@ -18,7 +18,7 @@ export class ClientConnection {
     this.ws = ws;
   }
 
-  send(data: string): void {
+  send(data: Uint8Array): void {
     if (this.ws.readyState === this.ws.OPEN) {
       this.ws.send(data);
     }

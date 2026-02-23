@@ -4,6 +4,7 @@ import {
   CLOCK_SYNC_SAMPLES,
   SERVER_TICK_RATE,
   FIXED_TIMESTEP,
+  encodeMessage,
 } from '@rapierphysicsplugin/shared';
 import type { ClockSyncResponseMessage } from '@rapierphysicsplugin/shared';
 
@@ -11,9 +12,9 @@ export class ClockSyncClient {
   private rttSamples: number[] = [];
   private offsetSamples: number[] = [];
   private intervalId: ReturnType<typeof setInterval> | null = null;
-  private sendFn: ((data: string) => void) | null = null;
+  private sendFn: ((data: Uint8Array) => void) | null = null;
 
-  start(sendFn: (data: string) => void): void {
+  start(sendFn: (data: Uint8Array) => void): void {
     this.sendFn = sendFn;
     this.sendSyncRequest();
     this.intervalId = setInterval(() => this.sendSyncRequest(), CLOCK_SYNC_INTERVAL_MS);
@@ -29,7 +30,7 @@ export class ClockSyncClient {
 
   private sendSyncRequest(): void {
     if (!this.sendFn) return;
-    this.sendFn(JSON.stringify({
+    this.sendFn(encodeMessage({
       type: MessageType.CLOCK_SYNC_REQUEST,
       clientTimestamp: Date.now(),
     }));

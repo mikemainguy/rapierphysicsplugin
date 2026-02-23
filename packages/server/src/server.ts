@@ -51,7 +51,7 @@ export class PhysicsServer {
 
     ws.on('message', (data: Buffer) => {
       try {
-        const message = decodeClientMessage(data.toString());
+        const message = decodeClientMessage(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
         this.handleMessage(conn, message);
       } catch (err) {
         console.error(`Error processing message from ${clientId}:`, err);

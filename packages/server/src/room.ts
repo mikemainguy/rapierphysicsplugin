@@ -136,7 +136,7 @@ export class Room {
     this.broadcast(message);
   }
 
-  private broadcast(message: string): void {
+  private broadcast(message: Uint8Array): void {
     for (const [, client] of this.clients) {
       client.send(message);
     }
