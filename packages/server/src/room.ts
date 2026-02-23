@@ -3,12 +3,12 @@ import type {
   BodyDescriptor,
   RoomSnapshot,
   Vec3,
-} from '@havokserver/shared';
+} from '@rapierphysicsplugin/shared';
 import {
   BROADCAST_INTERVAL,
   MessageType,
   encodeMessage,
-} from '@havokserver/shared';
+} from '@rapierphysicsplugin/shared';
 import { PhysicsWorld } from './physics-world.js';
 import { SimulationLoop } from './simulation-loop.js';
 import { StateManager } from './state-manager.js';
@@ -90,7 +90,7 @@ export class Room {
     }));
   }
 
-  bufferInput(clientId: string, input: import('@havokserver/shared').ClientInput): void {
+  bufferInput(clientId: string, input: import('@rapierphysicsplugin/shared').ClientInput): void {
     const buffer = this.inputBuffers.get(clientId);
     if (buffer) {
       // Map client tick to the current server tick (best-effort for now)

@@ -4,8 +4,8 @@ import {
   CLOCK_SYNC_SAMPLES,
   SERVER_TICK_RATE,
   FIXED_TIMESTEP,
-} from '@havokserver/shared';
-import type { ClockSyncResponseMessage } from '@havokserver/shared';
+} from '@rapierphysicsplugin/shared';
+import type { ClockSyncResponseMessage } from '@rapierphysicsplugin/shared';
 
 export class ClockSyncClient {
   private rttSamples: number[] = [];

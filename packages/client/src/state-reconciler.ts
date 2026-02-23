@@ -1,9 +1,9 @@
-import type { BodyState, RoomSnapshot, ClientInput, Vec3, Quat } from '@havokserver/shared';
+import type { BodyState, RoomSnapshot, ClientInput, Vec3, Quat } from '@rapierphysicsplugin/shared';
 import {
   RECONCILIATION_THRESHOLD,
   POSITION_LERP_SPEED,
   ROTATION_SLERP_SPEED,
-} from '@havokserver/shared';
+} from '@rapierphysicsplugin/shared';
 import { Interpolator } from './interpolator.js';
 
 export interface ReconciliationResult {

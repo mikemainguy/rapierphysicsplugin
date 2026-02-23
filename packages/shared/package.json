@@ -1,13 +1,12 @@
 {
-  "name": "@havokserver/shared",
+  "name": "@rapierphysicsplugin/shared",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
-    "test": "vitest run"
+    "build": "tsc"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

@@ -6,8 +6,8 @@ import {
   MessageType,
   encodeMessage,
   decodeServerMessage,
-} from '@havokserver/shared';
-import type { ServerMessage, RoomJoinedMessage, RoomStateMessage } from '@havokserver/shared';
+} from '@rapierphysicsplugin/shared';
+import type { ServerMessage, RoomJoinedMessage, RoomStateMessage } from '@rapierphysicsplugin/shared';
 
 const TEST_PORT = 9876;
 

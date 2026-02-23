@@ -1,4 +1,4 @@
-import { FIXED_TIMESTEP, BROADCAST_INTERVAL } from '@havokserver/shared';
+import { FIXED_TIMESTEP, BROADCAST_INTERVAL } from '@rapierphysicsplugin/shared';
 import type { Room } from './room.js';
 
 export class SimulationLoop {

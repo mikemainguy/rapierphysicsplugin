@@ -1,5 +1,5 @@
-import type { ClientInput, InputAction } from '@havokserver/shared';
-import { MAX_INPUT_BUFFER, CLIENT_INPUT_RATE } from '@havokserver/shared';
+import type { ClientInput, InputAction } from '@rapierphysicsplugin/shared';
+import { MAX_INPUT_BUFFER, CLIENT_INPUT_RATE } from '@rapierphysicsplugin/shared';
 
 export class InputManager {
   private pendingActions: InputAction[] = [];

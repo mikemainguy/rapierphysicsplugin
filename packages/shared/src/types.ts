@@ -53,6 +53,7 @@ export interface BodyDescriptor {
   position: Vec3;
   rotation: Quat;
   mass?: number;
+  centerOfMass?: Vec3;
   restitution?: number;
   friction?: number;
 }

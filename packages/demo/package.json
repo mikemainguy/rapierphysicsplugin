@@ -1,0 +1,22 @@
+{
+  "name": "@rapierphysicsplugin/demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "echo 'demo: nothing to build'",
+    "server": "npx tsx src/start-server.ts",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@rapierphysicsplugin/client": "1.0.0",
+    "@rapierphysicsplugin/server": "1.0.0",
+    "@rapierphysicsplugin/shared": "1.0.0",
+    "@dimforge/rapier3d-compat": "^0.14.0",
+    "@babylonjs/core": "^7.0.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0",
+    "typescript": "^5.4.0"
+  }
+}

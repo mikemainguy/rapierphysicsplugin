@@ -1,4 +1,4 @@
-import type { BodyState, RoomSnapshot } from '@havokserver/shared';
+import type { BodyState, RoomSnapshot } from '@rapierphysicsplugin/shared';
 import type { PhysicsWorld } from './physics-world.js';
 
 export class StateManager {

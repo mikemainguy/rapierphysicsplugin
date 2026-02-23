@@ -1,5 +1,5 @@
 import RAPIER from '@dimforge/rapier3d-compat';
-import { DEFAULT_PORT } from '@havokserver/shared';
+import { DEFAULT_PORT } from '@rapierphysicsplugin/shared';
 import { PhysicsServer } from './server.js';
 
 export { PhysicsServer } from './server.js';

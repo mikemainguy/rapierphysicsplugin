@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { InputBuffer } from '../input-buffer.js';
-import type { ClientInput } from '@havokserver/shared';
+import type { ClientInput } from '@rapierphysicsplugin/shared';
 
 describe('InputBuffer', () => {
   let buffer: InputBuffer;

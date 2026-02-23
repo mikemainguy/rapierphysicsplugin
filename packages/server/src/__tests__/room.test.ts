@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Room, RoomManager } from '../room.js';
-import type { BodyDescriptor } from '@havokserver/shared';
+import type { BodyDescriptor } from '@rapierphysicsplugin/shared';
 
 describe('Room', () => {
   let rapier: typeof RAPIER;

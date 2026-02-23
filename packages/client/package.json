@@ -1,17 +1,16 @@
 {
-  "name": "@havokserver/client",
+  "name": "@rapierphysicsplugin/client",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
-    "test": "vitest run"
+    "build": "tsc"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.14.0",
-    "@havokserver/shared": "1.0.0"
+    "@rapierphysicsplugin/shared": "1.0.0"
   },
   "peerDependencies": {
     "@babylonjs/core": ">=6.0.0"

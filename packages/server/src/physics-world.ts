@@ -5,8 +5,8 @@ import type {
   Vec3,
   Quat,
   InputAction,
-} from '@havokserver/shared';
-import { FIXED_TIMESTEP } from '@havokserver/shared';
+} from '@rapierphysicsplugin/shared';
+import { FIXED_TIMESTEP } from '@rapierphysicsplugin/shared';
 
 export class PhysicsWorld {
   private world: RAPIER.World;
@@ -22,7 +22,7 @@ export class PhysicsWorld {
 
   addBody(descriptor: BodyDescriptor): string {
     const { rapier, world } = this;
-    const { id, shape, motionType, position, rotation, mass, restitution, friction } = descriptor;
+    const { id, shape, motionType, position, rotation, mass, centerOfMass, restitution, friction } = descriptor;
 
     if (this.bodyMap.has(id)) {
       throw new Error(`Body with id "${id}" already exists`);
@@ -76,7 +76,15 @@ export class PhysicsWorld {
       }
     }
 
-    if (mass !== undefined && motionType === 'dynamic') {
+    if (centerOfMass !== undefined && motionType === 'dynamic') {
+      const m = mass ?? 1.0;
+      colliderDesc.setMassProperties(
+        m,
+        { x: centerOfMass.x, y: centerOfMass.y, z: centerOfMass.z },
+        { x: m / 6, y: m / 6, z: m / 6 },
+        { x: 0, y: 0, z: 0, w: 1 },
+      );
+    } else if (mass !== undefined && motionType === 'dynamic') {
       colliderDesc.setMass(mass);
     }
     if (restitution !== undefined) {

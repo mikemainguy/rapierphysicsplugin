@@ -1,5 +1,5 @@
-import type { BodyState, Vec3, Quat } from '@havokserver/shared';
-import { INTERPOLATION_BUFFER_SIZE, BROADCAST_RATE } from '@havokserver/shared';
+import type { BodyState, Vec3, Quat } from '@rapierphysicsplugin/shared';
+import { INTERPOLATION_BUFFER_SIZE, BROADCAST_RATE } from '@rapierphysicsplugin/shared';
 
 interface Snapshot {
   timestamp: number;

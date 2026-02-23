@@ -1,5 +1,5 @@
-import type { ClientInput } from '@havokserver/shared';
-import { MAX_INPUT_BUFFER } from '@havokserver/shared';
+import type { ClientInput } from '@rapierphysicsplugin/shared';
+import { MAX_INPUT_BUFFER } from '@rapierphysicsplugin/shared';
 
 export class InputBuffer {
   private buffer: Map<number, ClientInput[]> = new Map();

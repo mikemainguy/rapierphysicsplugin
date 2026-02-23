@@ -5,12 +5,12 @@ import type {
   ClientMessage,
   ServerMessage,
   ClientInput,
-} from '@havokserver/shared';
+} from '@rapierphysicsplugin/shared';
 import {
   MessageType,
   encodeMessage,
   decodeServerMessage,
-} from '@havokserver/shared';
+} from '@rapierphysicsplugin/shared';
 import { ClockSyncClient } from './clock-sync.js';
 import { StateReconciler } from './state-reconciler.js';
 import { Interpolator } from './interpolator.js';

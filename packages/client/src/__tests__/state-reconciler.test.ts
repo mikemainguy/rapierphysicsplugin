@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { StateReconciler, needsCorrection, blendBodyState } from '../state-reconciler.js';
-import type { BodyState, RoomSnapshot } from '@havokserver/shared';
+import type { BodyState, RoomSnapshot } from '@rapierphysicsplugin/shared';
 
 function makeState(id: string, x: number, y: number, z: number): BodyState {
   return {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Interpolator } from '../interpolator.js';
-import type { BodyState } from '@havokserver/shared';
+import type { BodyState } from '@rapierphysicsplugin/shared';
 
 function makeState(id: string, x: number, y: number, z: number, vx = 0, vy = 0, vz = 0): BodyState {
   return {

@@ -1,5 +1,5 @@
-import type { ClockSyncRequestMessage, ClockSyncResponseMessage } from '@havokserver/shared';
-import { MessageType, encodeMessage } from '@havokserver/shared';
+import type { ClockSyncRequestMessage, ClockSyncResponseMessage } from '@rapierphysicsplugin/shared';
+import { MessageType, encodeMessage } from '@rapierphysicsplugin/shared';
 import type { ClientConnection } from './client-connection.js';
 
 export function handleClockSyncRequest(

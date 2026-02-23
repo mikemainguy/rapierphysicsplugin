@@ -5,8 +5,8 @@ import {
   decodeClientMessage,
   encodeMessage,
   DEFAULT_PORT,
-} from '@havokserver/shared';
-import type { ClientMessage } from '@havokserver/shared';
+} from '@rapierphysicsplugin/shared';
+import type { ClientMessage } from '@rapierphysicsplugin/shared';
 import { RoomManager } from './room.js';
 import { ClientConnection } from './client-connection.js';
 import { handleClockSyncRequest } from './clock-sync.js';

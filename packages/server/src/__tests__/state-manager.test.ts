@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { PhysicsWorld } from '../physics-world.js';
 import { StateManager } from '../state-manager.js';
-import type { BodyDescriptor } from '@havokserver/shared';
+import type { BodyDescriptor } from '@rapierphysicsplugin/shared';
 
 describe('StateManager', () => {
   let world: PhysicsWorld;

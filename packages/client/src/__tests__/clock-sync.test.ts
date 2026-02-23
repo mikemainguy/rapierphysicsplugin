@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ClockSyncClient } from '../clock-sync.js';
-import { MessageType } from '@havokserver/shared';
+import { MessageType } from '@rapierphysicsplugin/shared';
 
 describe('ClockSyncClient', () => {
   let clockSync: ClockSyncClient;
