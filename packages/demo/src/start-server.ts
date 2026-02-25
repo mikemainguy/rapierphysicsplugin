@@ -41,40 +41,6 @@ const initialBodies: BodyDescriptor[] = [
     friction: 0.8,
     restitution: 0.3,
   },
-  // Dynamic box (1x1x1)
-  {
-    id: 'box-0',
-    shape: { type: 'box', params: { halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } },
-    motionType: 'dynamic',
-    position: { x: 0, y: 3, z: 0 },
-    rotation: { x: 0, y: 0, z: 0, w: 1 },
-    mass: 1.0,
-    restitution: 0.4,
-    friction: 0.5,
-  },
-  // Dynamic sphere (radius 0.5)
-  {
-    id: 'sphere-0',
-    shape: { type: 'sphere', params: { radius: 0.5 } },
-    motionType: 'dynamic',
-    position: { x: 2, y: 4, z: 0 },
-    rotation: { x: 0, y: 0, z: 0, w: 1 },
-    mass: 1.0,
-    restitution: 0.6,
-    friction: 0.3,
-  },
-  // Dynamic capsule (halfHeight=0.5, radius=0.3, total height=1.6)
-  // Slight tilt so it doesn't balance on its end cap
-  {
-    id: 'capsule-0',
-    shape: { type: 'capsule', params: { halfHeight: 0.5, radius: 0.3 } },
-    motionType: 'dynamic',
-    position: { x: -2, y: 5, z: 0 },
-    rotation: { x: 0.15, y: 0, z: 0.15, w: 0.98 },
-    mass: 1.0,
-    restitution: 0.3,
-    friction: 0.5,
-  },
   // Static mesh ramp (triangular wedge)
   {
     id: 'ramp',

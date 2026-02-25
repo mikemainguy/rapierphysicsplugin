@@ -65,6 +65,22 @@ export interface BodyDescriptor {
   centerOfMass?: Vec3;
   restitution?: number;
   friction?: number;
+  isTrigger?: boolean;
+}
+
+export type CollisionEventType =
+  | 'COLLISION_STARTED'
+  | 'COLLISION_FINISHED'
+  | 'TRIGGER_ENTERED'
+  | 'TRIGGER_EXITED';
+
+export interface CollisionEventData {
+  bodyIdA: string;
+  bodyIdB: string;
+  type: CollisionEventType;
+  point: Vec3 | null;
+  normal: Vec3 | null;
+  impulse: number;
 }
 
 export interface RoomSnapshot {

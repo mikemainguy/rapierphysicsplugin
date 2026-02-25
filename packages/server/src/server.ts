@@ -1,3 +1,4 @@
+import { createServer, type Server as HttpServer } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import {
@@ -17,6 +18,7 @@ function generateClientId(): string {
 }
 
 export class PhysicsServer {
+  private httpServer: HttpServer | null = null;
   private wss: WebSocketServer | null = null;
   private connections: Map<string, ClientConnection> = new Map();
   private roomManager: RoomManager;
@@ -29,13 +31,18 @@ export class PhysicsServer {
 
   start(port: number = DEFAULT_PORT): Promise<void> {
     return new Promise((resolve) => {
-      this.wss = new WebSocketServer({ port });
+      this.httpServer = createServer((_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('Physics server OK');
+      });
+
+      this.wss = new WebSocketServer({ server: this.httpServer });
 
       this.wss.on('connection', (ws: WebSocket) => {
         this.handleConnection(ws);
       });
 
-      this.wss.on('listening', () => {
+      this.httpServer.listen(port, () => {
         console.log(`Physics server listening on port ${port}`);
         resolve();
       });
@@ -205,9 +212,11 @@ export class PhysicsServer {
     }
     this.connections.clear();
 
-    // Close server
+    // Close servers
     this.wss?.close();
     this.wss = null;
+    this.httpServer?.close();
+    this.httpServer = null;
   }
 
   getRoomManager(): RoomManager {

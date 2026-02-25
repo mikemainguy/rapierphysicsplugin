@@ -57,7 +57,7 @@ async function main() {
     await syncClient.connect('wss://rapier-server.flatearthdefense.com');
     debugEl.textContent = 'Connected. Joining room...';
   } catch {
-    debugEl.textContent = 'Failed to connect to ws://localhost:8080\nMake sure the server is running.';
+    debugEl.textContent = 'Failed to connect to wss://rapier-server.flatearthdefense.com';
     engine.runRenderLoop(() => scene.render());
     window.addEventListener('resize', () => engine.resize());
     return;

@@ -2,6 +2,7 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import type {
   BodyDescriptor,
   BodyState,
+  CollisionEventData,
   Vec3,
   Quat,
   InputAction,
@@ -13,16 +14,19 @@ export class PhysicsWorld {
   private rapier: typeof RAPIER;
   private bodyMap: Map<string, RAPIER.RigidBody> = new Map();
   private colliderMap: Map<string, RAPIER.Collider> = new Map();
+  private colliderHandleToBodyId: Map<number, string> = new Map();
+  private eventQueue: RAPIER.EventQueue;
 
   constructor(rapier: typeof RAPIER, gravity: Vec3 = { x: 0, y: -9.81, z: 0 }) {
     this.rapier = rapier;
     this.world = new rapier.World(new rapier.Vector3(gravity.x, gravity.y, gravity.z));
     this.world.timestep = FIXED_TIMESTEP;
+    this.eventQueue = new rapier.EventQueue(true);
   }
 
   addBody(descriptor: BodyDescriptor): string {
     const { rapier, world } = this;
-    const { id, shape, motionType, position, rotation, mass, centerOfMass, restitution, friction } = descriptor;
+    const { id, shape, motionType, position, rotation, mass, centerOfMass, restitution, friction, isTrigger } = descriptor;
 
     if (this.bodyMap.has(id)) {
       throw new Error(`Body with id "${id}" already exists`);
@@ -93,11 +97,16 @@ export class PhysicsWorld {
     if (friction !== undefined) {
       colliderDesc.setFriction(friction);
     }
+    if (isTrigger) {
+      colliderDesc.setSensor(true);
+    }
+    colliderDesc.setActiveEvents(rapier.ActiveEvents.COLLISION_EVENTS);
 
     const collider = world.createCollider(colliderDesc, rigidBody);
 
     this.bodyMap.set(id, rigidBody);
     this.colliderMap.set(id, collider);
+    this.colliderHandleToBodyId.set(collider.handle, id);
 
     return id;
   }
@@ -105,6 +114,11 @@ export class PhysicsWorld {
   removeBody(id: string): void {
     const body = this.bodyMap.get(id);
     if (!body) return;
+
+    const collider = this.colliderMap.get(id);
+    if (collider) {
+      this.colliderHandleToBodyId.delete(collider.handle);
+    }
 
     this.world.removeRigidBody(body);
     this.bodyMap.delete(id);
@@ -209,8 +223,53 @@ export class PhysicsWorld {
     }
   }
 
-  step(): void {
-    this.world.step();
+  step(): CollisionEventData[] {
+    this.world.step(this.eventQueue);
+
+    const events: CollisionEventData[] = [];
+
+    this.eventQueue.drainCollisionEvents((handle1, handle2, started) => {
+      const bodyIdA = this.colliderHandleToBodyId.get(handle1);
+      const bodyIdB = this.colliderHandleToBodyId.get(handle2);
+      if (!bodyIdA || !bodyIdB) return;
+
+      const collider1 = this.world.getCollider(handle1);
+      const collider2 = this.world.getCollider(handle2);
+      if (!collider1 || !collider2) return;
+
+      const isSensor = collider1.isSensor() || collider2.isSensor();
+
+      let type: CollisionEventData['type'];
+      if (isSensor) {
+        type = started ? 'TRIGGER_ENTERED' : 'TRIGGER_EXITED';
+      } else {
+        type = started ? 'COLLISION_STARTED' : 'COLLISION_FINISHED';
+      }
+
+      let point: Vec3 | null = null;
+      let normal: Vec3 | null = null;
+      let impulse = 0;
+
+      if (started && !isSensor) {
+        this.world.contactPair(collider1, collider2, (manifold, flipped) => {
+          const cp = manifold.localContactPoint1(0);
+          if (cp) {
+            point = { x: cp.x, y: cp.y, z: cp.z };
+          }
+          const n = manifold.localNormal1();
+          if (n) {
+            normal = flipped
+              ? { x: -n.x, y: -n.y, z: -n.z }
+              : { x: n.x, y: n.y, z: n.z };
+          }
+          impulse = manifold.contactImpulse(0) ?? 0;
+        });
+      }
+
+      events.push({ bodyIdA, bodyIdB, type, point, normal, impulse });
+    });
+
+    return events;
   }
 
   getSnapshot(skipSleeping = false): BodyState[] {
@@ -262,11 +321,12 @@ export class PhysicsWorld {
 
   reset(bodies: BodyDescriptor[]): void {
     // Remove all existing bodies
-    for (const [id, body] of this.bodyMap) {
+    for (const [, body] of this.bodyMap) {
       this.world.removeRigidBody(body);
     }
     this.bodyMap.clear();
     this.colliderMap.clear();
+    this.colliderHandleToBodyId.clear();
 
     // Reload from descriptors
     this.loadState(bodies);
@@ -281,8 +341,10 @@ export class PhysicsWorld {
   }
 
   destroy(): void {
+    this.eventQueue.free();
     this.world.free();
     this.bodyMap.clear();
     this.colliderMap.clear();
+    this.colliderHandleToBodyId.clear();
   }
 }

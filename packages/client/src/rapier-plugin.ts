@@ -25,8 +25,10 @@ import {
   PhysicsConstraintAxisLimitMode,
   PhysicsConstraintMotorType,
   PhysicsConstraintAxis,
+  PhysicsEventType,
 } from '@babylonjs/core';
 import type { Mesh, TransformNode, Nullable } from '@babylonjs/core';
+import type { CollisionEventData } from '@rapierphysicsplugin/shared';
 
 export class RapierPlugin implements IPhysicsEnginePluginV2 {
   public world: RAPIER.World;
@@ -47,6 +49,10 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
   private bodyCollisionObservables = new Map<PhysicsBody, Observable<IPhysicsCollisionEvent>>();
   private bodyCollisionEndedObservables = new Map<PhysicsBody, Observable<IBasePhysicsCollisionEvent>>();
   private constraintToJoint = new Map<PhysicsConstraint, RAPIER.ImpulseJoint>();
+  private collisionCallbackEnabled = new Set<PhysicsBody>();
+  private collisionEndedCallbackEnabled = new Set<PhysicsBody>();
+  private triggerShapes = new Set<PhysicsShape>();
+  private bodyIdToPhysicsBody = new Map<string, PhysicsBody>();
   private maxLinearVelocity = 200;
   private maxAngularVelocity = 200;
 
@@ -142,6 +148,8 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
       this.bodyToColliders.delete(body);
       this.bodyCollisionObservables.delete(body);
       this.bodyCollisionEndedObservables.delete(body);
+      this.collisionCallbackEnabled.delete(body);
+      this.collisionEndedCallbackEnabled.delete(body);
     }
   }
 
@@ -351,16 +359,28 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
 
   // --- Triggers & collision callbacks ---
 
-  setTrigger(_shape: PhysicsShape, _isTrigger: boolean): void {
-    // Would set collider as sensor in Rapier
+  setTrigger(shape: PhysicsShape, isTrigger: boolean): void {
+    if (isTrigger) {
+      this.triggerShapes.add(shape);
+    } else {
+      this.triggerShapes.delete(shape);
+    }
   }
 
-  setCollisionCallbackEnabled(_body: PhysicsBody, _enabled: boolean, _instanceIndex?: number): void {
-    // Collision callback registration
+  setCollisionCallbackEnabled(body: PhysicsBody, enabled: boolean, _instanceIndex?: number): void {
+    if (enabled) {
+      this.collisionCallbackEnabled.add(body);
+    } else {
+      this.collisionCallbackEnabled.delete(body);
+    }
   }
 
-  setCollisionEndedCallbackEnabled(_body: PhysicsBody, _enabled: boolean, _instanceIndex?: number): void {
-    // Collision ended callback registration
+  setCollisionEndedCallbackEnabled(body: PhysicsBody, enabled: boolean, _instanceIndex?: number): void {
+    if (enabled) {
+      this.collisionEndedCallbackEnabled.add(body);
+    } else {
+      this.collisionEndedCallbackEnabled.delete(body);
+    }
   }
 
   // --- Event mask ---
@@ -621,6 +641,10 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
     this.shapeToColliderDesc.clear();
     this.shapeTypeMap.clear();
     this.constraintToJoint.clear();
+    this.collisionCallbackEnabled.clear();
+    this.collisionEndedCallbackEnabled.clear();
+    this.triggerShapes.clear();
+    this.bodyIdToPhysicsBody.clear();
   }
 
   // --- Rapier-specific helpers for sync module ---
@@ -640,6 +664,112 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
     const rb = this.bodyToRigidBody.get(body);
     if (rb) {
       rb.setRotation(new this.rapier.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w), true);
+    }
+  }
+
+  // --- Server collision event injection ---
+
+  registerBodyId(bodyId: string, body: PhysicsBody): void {
+    this.bodyIdToPhysicsBody.set(bodyId, body);
+  }
+
+  unregisterBodyId(bodyId: string): void {
+    this.bodyIdToPhysicsBody.delete(bodyId);
+  }
+
+  injectCollisionEvents(events: CollisionEventData[]): void {
+    for (const event of events) {
+      const bodyA = this.bodyIdToPhysicsBody.get(event.bodyIdA);
+      const bodyB = this.bodyIdToPhysicsBody.get(event.bodyIdB);
+      if (!bodyA || !bodyB) continue;
+
+      const point = event.point ? new Vector3(event.point.x, event.point.y, event.point.z) : null;
+      const normal = event.normal ? new Vector3(event.normal.x, event.normal.y, event.normal.z) : null;
+
+      const eventType = PhysicsEventType[event.type as keyof typeof PhysicsEventType];
+
+      const baseEventA: IBasePhysicsCollisionEvent = {
+        collider: bodyA,
+        collidedAgainst: bodyB,
+        colliderIndex: 0,
+        collidedAgainstIndex: 0,
+        type: eventType,
+      };
+
+      const baseEventB: IBasePhysicsCollisionEvent = {
+        collider: bodyB,
+        collidedAgainst: bodyA,
+        colliderIndex: 0,
+        collidedAgainstIndex: 0,
+        type: eventType,
+      };
+
+      switch (event.type) {
+        case 'COLLISION_STARTED': {
+          const fullEventA: IPhysicsCollisionEvent = {
+            ...baseEventA,
+            point,
+            normal,
+            distance: 0,
+            impulse: event.impulse,
+          };
+          const fullEventB: IPhysicsCollisionEvent = {
+            ...baseEventB,
+            point,
+            normal: normal ? normal.negate() : null,
+            distance: 0,
+            impulse: event.impulse,
+          };
+
+          this.onCollisionObservable.notifyObservers(fullEventA);
+
+          if (this.collisionCallbackEnabled.has(bodyA)) {
+            this.bodyCollisionObservables.get(bodyA)?.notifyObservers(fullEventA);
+          }
+          if (this.collisionCallbackEnabled.has(bodyB)) {
+            this.bodyCollisionObservables.get(bodyB)?.notifyObservers(fullEventB);
+          }
+          break;
+        }
+        case 'COLLISION_FINISHED': {
+          this.onCollisionEndedObservable.notifyObservers(baseEventA);
+
+          if (this.collisionEndedCallbackEnabled.has(bodyA)) {
+            this.bodyCollisionEndedObservables.get(bodyA)?.notifyObservers(baseEventA);
+          }
+          if (this.collisionEndedCallbackEnabled.has(bodyB)) {
+            this.bodyCollisionEndedObservables.get(bodyB)?.notifyObservers(baseEventB);
+          }
+          break;
+        }
+        case 'TRIGGER_ENTERED':
+        case 'TRIGGER_EXITED': {
+          this.onTriggerCollisionObservable.notifyObservers(baseEventA);
+
+          // Fire per-body observables for triggers via collision observables
+          if (this.collisionCallbackEnabled.has(bodyA)) {
+            const triggerEventA: IPhysicsCollisionEvent = {
+              ...baseEventA,
+              point: null,
+              normal: null,
+              distance: 0,
+              impulse: 0,
+            };
+            this.bodyCollisionObservables.get(bodyA)?.notifyObservers(triggerEventA);
+          }
+          if (this.collisionCallbackEnabled.has(bodyB)) {
+            const triggerEventB: IPhysicsCollisionEvent = {
+              ...baseEventB,
+              point: null,
+              normal: null,
+              distance: 0,
+              impulse: 0,
+            };
+            this.bodyCollisionObservables.get(bodyB)?.notifyObservers(triggerEventB);
+          }
+          break;
+        }
+      }
     }
   }
 }

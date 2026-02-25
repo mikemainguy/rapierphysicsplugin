@@ -13,7 +13,7 @@ import {
   FIELD_ANG_VEL,
   FIELD_ALL,
 } from '../index.js';
-import type { ClientMessage, ServerMessage, RoomStateMessage } from '../index.js';
+import type { ClientMessage, ServerMessage, RoomStateMessage, CollisionEventsMessage } from '../index.js';
 
 describe('serialization', () => {
   it('should round-trip a ClockSyncRequest message', () => {
@@ -489,5 +489,104 @@ describe('isDelta flag', () => {
     const encoded = encodeRoomState(message);
     const decoded = decodeRoomState(encoded);
     expect(decoded.isDelta).toBe(false);
+  });
+});
+
+describe('legacy JSON fallback', () => {
+  it('should decode a raw JSON-encoded message without opcode prefix', () => {
+    const message: ClientMessage = {
+      type: MessageType.CLOCK_SYNC_REQUEST,
+      clientTimestamp: 1234567890,
+    };
+    const jsonBytes = new TextEncoder().encode(JSON.stringify(message));
+    const decoded = decodeClientMessage(jsonBytes);
+    expect(decoded).toEqual(message);
+  });
+
+  it('should decode a JSON-encoded server message without opcode prefix', () => {
+    const message: ServerMessage = {
+      type: MessageType.ERROR,
+      message: 'Something went wrong',
+    };
+    const jsonBytes = new TextEncoder().encode(JSON.stringify(message));
+    const decoded = decodeServerMessage(jsonBytes);
+    expect(decoded).toEqual(message);
+  });
+});
+
+describe('collision events serialization', () => {
+  it('should round-trip a COLLISION_EVENTS message via msgpack', () => {
+    const message: CollisionEventsMessage = {
+      type: MessageType.COLLISION_EVENTS,
+      tick: 42,
+      events: [
+        {
+          bodyIdA: 'box1',
+          bodyIdB: 'ground',
+          type: 'COLLISION_STARTED',
+          point: { x: 1.5, y: 0, z: -2.3 },
+          normal: { x: 0, y: 1, z: 0 },
+          impulse: 15.7,
+        },
+        {
+          bodyIdA: 'sphere1',
+          bodyIdB: 'trigger-zone',
+          type: 'TRIGGER_ENTERED',
+          point: null,
+          normal: null,
+          impulse: 0,
+        },
+      ],
+    };
+    const encoded = encodeMessage(message);
+    expect(encoded).toBeInstanceOf(Uint8Array);
+    expect(encoded[0]).toBe(0x02); // msgpack opcode
+    const decoded = decodeServerMessage(encoded) as CollisionEventsMessage;
+    expect(decoded.type).toBe(MessageType.COLLISION_EVENTS);
+    expect(decoded.tick).toBe(42);
+    expect(decoded.events).toHaveLength(2);
+    expect(decoded.events[0].bodyIdA).toBe('box1');
+    expect(decoded.events[0].bodyIdB).toBe('ground');
+    expect(decoded.events[0].type).toBe('COLLISION_STARTED');
+    expect(decoded.events[0].point).toEqual({ x: 1.5, y: 0, z: -2.3 });
+    expect(decoded.events[0].normal).toEqual({ x: 0, y: 1, z: 0 });
+    expect(decoded.events[0].impulse).toBe(15.7);
+    expect(decoded.events[1].type).toBe('TRIGGER_ENTERED');
+    expect(decoded.events[1].point).toBeNull();
+    expect(decoded.events[1].normal).toBeNull();
+    expect(decoded.events[1].impulse).toBe(0);
+  });
+
+  it('should round-trip COLLISION_EVENTS with empty events array', () => {
+    const message: CollisionEventsMessage = {
+      type: MessageType.COLLISION_EVENTS,
+      tick: 0,
+      events: [],
+    };
+    const encoded = encodeMessage(message);
+    const decoded = decodeServerMessage(encoded) as CollisionEventsMessage;
+    expect(decoded.type).toBe(MessageType.COLLISION_EVENTS);
+    expect(decoded.events).toHaveLength(0);
+  });
+
+  it('should round-trip all collision event types', () => {
+    const types = ['COLLISION_STARTED', 'COLLISION_FINISHED', 'TRIGGER_ENTERED', 'TRIGGER_EXITED'] as const;
+    for (const eventType of types) {
+      const message: CollisionEventsMessage = {
+        type: MessageType.COLLISION_EVENTS,
+        tick: 1,
+        events: [{
+          bodyIdA: 'a',
+          bodyIdB: 'b',
+          type: eventType,
+          point: null,
+          normal: null,
+          impulse: 0,
+        }],
+      };
+      const encoded = encodeMessage(message);
+      const decoded = decodeServerMessage(encoded) as CollisionEventsMessage;
+      expect(decoded.events[0].type).toBe(eventType);
+    }
   });
 });

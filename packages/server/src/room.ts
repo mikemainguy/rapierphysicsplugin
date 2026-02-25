@@ -1,6 +1,7 @@
 import type RAPIER from '@dimforge/rapier3d-compat';
 import type {
   BodyDescriptor,
+  CollisionEventData,
   RoomSnapshot,
   Vec3,
 } from '@rapierphysicsplugin/shared';
@@ -26,6 +27,7 @@ export class Room {
   private initialBodies: BodyDescriptor[] = [];
   private currentTick = 0;
   private ticksSinceLastBroadcast = 0;
+  private pendingCollisionEvents: CollisionEventData[] = [];
 
   constructor(id: string, rapier: typeof RAPIER, gravity?: Vec3) {
     this.id = id;
@@ -111,8 +113,11 @@ export class Room {
       }
     }
 
-    // 2. Step the physics world
-    this.physicsWorld.step();
+    // 2. Step the physics world and collect collision events
+    const collisionEvents = this.physicsWorld.step();
+    if (collisionEvents.length > 0) {
+      this.pendingCollisionEvents.push(...collisionEvents);
+    }
 
     // 3. Increment tick
     this.currentTick++;
@@ -128,21 +133,31 @@ export class Room {
   private broadcastState(): void {
     const delta = this.stateManager.createDelta(this.physicsWorld, this.currentTick);
 
-    if (delta.bodies.length === 0) return;
+    if (delta.bodies.length > 0) {
+      // Encode directly with ID mapping for numeric body indices
+      const message = encodeRoomState(
+        {
+          type: MessageType.ROOM_STATE,
+          tick: delta.tick,
+          timestamp: delta.timestamp,
+          bodies: delta.bodies,
+          isDelta: true,
+        },
+        this.stateManager.getIdToIndexMap(),
+      );
 
-    // Encode directly with ID mapping for numeric body indices
-    const message = encodeRoomState(
-      {
-        type: MessageType.ROOM_STATE,
-        tick: delta.tick,
-        timestamp: delta.timestamp,
-        bodies: delta.bodies,
-        isDelta: true,
-      },
-      this.stateManager.getIdToIndexMap(),
-    );
+      this.broadcast(message);
+    }
 
-    this.broadcast(message);
+    if (this.pendingCollisionEvents.length > 0) {
+      const collisionMessage = encodeMessage({
+        type: MessageType.COLLISION_EVENTS,
+        tick: this.currentTick,
+        events: this.pendingCollisionEvents,
+      });
+      this.broadcast(collisionMessage);
+      this.pendingCollisionEvents = [];
+    }
   }
 
   private broadcast(message: Uint8Array): void {
@@ -165,6 +180,7 @@ export class Room {
     this.physicsWorld.reset(this.initialBodies);
     this.currentTick = 0;
     this.ticksSinceLastBroadcast = 0;
+    this.pendingCollisionEvents = [];
     this.stateManager.clear();
     for (const [, buffer] of this.inputBuffers) {
       buffer.clear();
@@ -201,6 +217,7 @@ export class Room {
     }
     this.clients.clear();
     this.inputBuffers.clear();
+    this.pendingCollisionEvents = [];
     this.stateManager.clear();
     this.physicsWorld.destroy();
   }

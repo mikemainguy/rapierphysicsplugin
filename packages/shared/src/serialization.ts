@@ -27,7 +27,12 @@ export function decodeMessage(
   if (data[0] === OPCODE_ROOM_STATE) {
     return decodeRoomState(data, indexToId);
   }
-  return unpack(data.subarray(1)) as ClientMessage | ServerMessage;
+  if (data[0] === OPCODE_MSGPACK) {
+    return unpack(data.subarray(1)) as ClientMessage | ServerMessage;
+  }
+  // Fallback: legacy JSON encoding (no opcode prefix)
+  const text = new TextDecoder().decode(data);
+  return JSON.parse(text) as ClientMessage | ServerMessage;
 }
 
 export function decodeClientMessage(data: Uint8Array): ClientMessage {

@@ -1,6 +1,7 @@
 import type {
   BodyDescriptor,
   BodyState,
+  CollisionEventData,
   RoomSnapshot,
   InputAction,
   ClientMessage,
@@ -25,6 +26,7 @@ type StateUpdateCallback = (state: RoomSnapshot) => void;
 type BodyAddedCallback = (body: BodyDescriptor) => void;
 type BodyRemovedCallback = (bodyId: string) => void;
 type SimulationStartedCallback = (snapshot: RoomSnapshot) => void;
+type CollisionEventsCallback = (events: CollisionEventData[]) => void;
 
 export class PhysicsSyncClient {
   private ws: WebSocket | null = null;
@@ -48,6 +50,7 @@ export class PhysicsSyncClient {
   private bodyAddedCallbacks: BodyAddedCallback[] = [];
   private bodyRemovedCallbacks: BodyRemovedCallback[] = [];
   private simulationStartedCallbacks: SimulationStartedCallback[] = [];
+  private collisionEventsCallbacks: CollisionEventsCallback[] = [];
 
   private connectResolve: (() => void) | null = null;
   private connectReject: ((err: Error) => void) | null = null;
@@ -79,11 +82,26 @@ export class PhysicsSyncClient {
         this.connectReject = null;
       };
 
-      this.ws.onmessage = (event) => {
-        const buf = new Uint8Array(event.data as ArrayBuffer);
+      this.ws.onmessage = async (event) => {
+        let buf: Uint8Array;
+        if (event.data instanceof ArrayBuffer) {
+          buf = new Uint8Array(event.data);
+        } else if (event.data instanceof Blob) {
+          buf = new Uint8Array(await event.data.arrayBuffer());
+        } else {
+          console.warn('[SyncClient] Unexpected message data type:', typeof event.data);
+          return;
+        }
         this._bytesReceived += buf.byteLength;
-        const message = decodeServerMessage(buf, this.indexToId);
-        this.handleMessage(message);
+        try {
+          const message = decodeServerMessage(buf, this.indexToId);
+          this.handleMessage(message);
+        } catch (err) {
+          console.warn(
+            `[SyncClient] Failed to decode server message (${buf.byteLength} bytes, opcode=0x${buf[0]?.toString(16)}):`,
+            err,
+          );
+        }
       };
 
       this.ws.onclose = () => {
@@ -183,6 +201,10 @@ export class PhysicsSyncClient {
 
   onSimulationStarted(callback: SimulationStartedCallback): void {
     this.simulationStartedCallbacks.push(callback);
+  }
+
+  onCollisionEvents(callback: CollisionEventsCallback): void {
+    this.collisionEventsCallbacks.push(callback);
   }
 
   startSimulation(): void {
@@ -357,6 +379,12 @@ export class PhysicsSyncClient {
         }
         break;
       }
+
+      case MessageType.COLLISION_EVENTS:
+        for (const cb of this.collisionEventsCallbacks) {
+          cb(message.events);
+        }
+        break;
 
       case MessageType.ERROR:
         console.error(`Server error: ${message.message}`);

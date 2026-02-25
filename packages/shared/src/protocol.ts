@@ -2,6 +2,7 @@ import type {
   BodyDescriptor,
   BodyState,
   ClientInput,
+  CollisionEventData,
   RoomSnapshot,
   Vec3,
 } from './types.js';
@@ -21,6 +22,7 @@ export enum MessageType {
   ROOM_CREATED = 'room_created',
   START_SIMULATION = 'start_simulation',
   SIMULATION_STARTED = 'simulation_started',
+  COLLISION_EVENTS = 'collision_events',
   ERROR = 'error',
 }
 
@@ -110,6 +112,12 @@ export interface SimulationStartedMessage {
   bodyIdMap?: Record<string, number>;
 }
 
+export interface CollisionEventsMessage {
+  type: MessageType.COLLISION_EVENTS;
+  tick: number;
+  events: CollisionEventData[];
+}
+
 export interface ErrorMessage {
   type: MessageType.ERROR;
   message: string;
@@ -132,6 +140,7 @@ export type ServerMessage =
   | RoomStateMessage
   | RoomCreatedMessage
   | SimulationStartedMessage
+  | CollisionEventsMessage
   | ErrorMessage
   | AddBodyMessage
   | RemoveBodyMessage
