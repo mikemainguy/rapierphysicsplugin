@@ -20,6 +20,9 @@ import type { BodyDescriptor, BodyState, BoxShapeParams, CapsuleShapeParams, Con
 // Body ID → BabylonJS mesh
 const meshMap = new Map<string, Mesh>();
 
+// Collision event counter
+let collisionCount = 0;
+
 // Unified constraint visualization
 interface ConstraintVizEntry {
   descriptor: ConstraintDescriptor;
@@ -152,6 +155,7 @@ async function main() {
     }
     meshMap.clear();
     disposeAllConstraintViz();
+    collisionCount = 0;
 
     // Recreate from fresh snapshot
     createMeshesFromSnapshot(scene, freshSnapshot);
@@ -165,7 +169,12 @@ async function main() {
     }
   });
 
-  // 6d. Wire up constraint events — draw lines, labels, pivot markers, axis arrows
+  // 6d. Wire up collision events
+  syncClient.onCollisionEvents((events) => {
+    collisionCount += events.length;
+  });
+
+  // 6e. Wire up constraint events — draw lines, labels, pivot markers, axis arrows
   syncClient.onConstraintAdded((constraint) => {
     createConstraintViz(scene, constraint);
   });
@@ -266,6 +275,7 @@ async function main() {
       `Bodies: ${syncClient.totalBodyCount} (delta: ${state.bodies.length})\n` +
       `WS sent: ${formatBytes(sent)}\n` +
       `WS recv: ${formatBytes(recv)}\n` +
+      `Collisions: ${collisionCount}\n` +
       `Client: ${syncClient.getClientId() ?? '?'}`;
   });
 
