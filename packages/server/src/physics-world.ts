@@ -3,11 +3,12 @@ import type {
   BodyDescriptor,
   BodyState,
   CollisionEventData,
+  ConstraintDescriptor,
   Vec3,
   Quat,
   InputAction,
 } from '@rapierphysicsplugin/shared';
-import { FIXED_TIMESTEP } from '@rapierphysicsplugin/shared';
+import { FIXED_TIMESTEP, createJointData } from '@rapierphysicsplugin/shared';
 
 export class PhysicsWorld {
   private world: RAPIER.World;
@@ -15,6 +16,7 @@ export class PhysicsWorld {
   private bodyMap: Map<string, RAPIER.RigidBody> = new Map();
   private colliderMap: Map<string, RAPIER.Collider> = new Map();
   private colliderHandleToBodyId: Map<number, string> = new Map();
+  private constraintMap: Map<string, RAPIER.ImpulseJoint> = new Map();
   private eventQueue: RAPIER.EventQueue;
 
   constructor(rapier: typeof RAPIER, gravity: Vec3 = { x: 0, y: -9.81, z: 0 }) {
@@ -223,6 +225,40 @@ export class PhysicsWorld {
     }
   }
 
+  addConstraint(descriptor: ConstraintDescriptor): string {
+    const { id, bodyIdA, bodyIdB } = descriptor;
+
+    if (this.constraintMap.has(id)) {
+      throw new Error(`Constraint with id "${id}" already exists`);
+    }
+
+    const rbA = this.bodyMap.get(bodyIdA);
+    const rbB = this.bodyMap.get(bodyIdB);
+    if (!rbA) throw new Error(`Body "${bodyIdA}" not found for constraint "${id}"`);
+    if (!rbB) throw new Error(`Body "${bodyIdB}" not found for constraint "${id}"`);
+
+    const jointData = createJointData(this.rapier, descriptor);
+    const joint = this.world.createImpulseJoint(jointData, rbA, rbB, true);
+
+    if (descriptor.collision === false) {
+      joint.setContactsEnabled(false);
+    }
+
+    this.constraintMap.set(id, joint);
+    return id;
+  }
+
+  removeConstraint(id: string): void {
+    const joint = this.constraintMap.get(id);
+    if (!joint) return;
+    this.world.removeImpulseJoint(joint, true);
+    this.constraintMap.delete(id);
+  }
+
+  hasConstraint(id: string): boolean {
+    return this.constraintMap.has(id);
+  }
+
   step(): CollisionEventData[] {
     this.world.step(this.eventQueue);
 
@@ -319,7 +355,13 @@ export class PhysicsWorld {
     }
   }
 
-  reset(bodies: BodyDescriptor[]): void {
+  reset(bodies: BodyDescriptor[], constraints?: ConstraintDescriptor[]): void {
+    // Remove all existing constraints first (joints reference bodies)
+    for (const [, joint] of this.constraintMap) {
+      this.world.removeImpulseJoint(joint, true);
+    }
+    this.constraintMap.clear();
+
     // Remove all existing bodies
     for (const [, body] of this.bodyMap) {
       this.world.removeRigidBody(body);
@@ -330,6 +372,13 @@ export class PhysicsWorld {
 
     // Reload from descriptors
     this.loadState(bodies);
+
+    // Re-create constraints
+    if (constraints) {
+      for (const c of constraints) {
+        this.addConstraint(c);
+      }
+    }
   }
 
   hasBody(id: string): boolean {
@@ -341,6 +390,7 @@ export class PhysicsWorld {
   }
 
   destroy(): void {
+    this.constraintMap.clear();
     this.eventQueue.free();
     this.world.free();
     this.bodyMap.clear();

@@ -2,6 +2,7 @@ import type {
   BodyDescriptor,
   BodyState,
   CollisionEventData,
+  ConstraintDescriptor,
   RoomSnapshot,
   InputAction,
   ClientMessage,
@@ -27,6 +28,8 @@ type BodyAddedCallback = (body: BodyDescriptor) => void;
 type BodyRemovedCallback = (bodyId: string) => void;
 type SimulationStartedCallback = (snapshot: RoomSnapshot) => void;
 type CollisionEventsCallback = (events: CollisionEventData[]) => void;
+type ConstraintAddedCallback = (constraint: ConstraintDescriptor) => void;
+type ConstraintRemovedCallback = (constraintId: string) => void;
 
 export class PhysicsSyncClient {
   private ws: WebSocket | null = null;
@@ -51,6 +54,8 @@ export class PhysicsSyncClient {
   private bodyRemovedCallbacks: BodyRemovedCallback[] = [];
   private simulationStartedCallbacks: SimulationStartedCallback[] = [];
   private collisionEventsCallbacks: CollisionEventsCallback[] = [];
+  private constraintAddedCallbacks: ConstraintAddedCallback[] = [];
+  private constraintRemovedCallbacks: ConstraintRemovedCallback[] = [];
 
   private connectResolve: (() => void) | null = null;
   private connectReject: ((err: Error) => void) | null = null;
@@ -187,6 +192,16 @@ export class PhysicsSyncClient {
     this.send({ type: MessageType.REMOVE_BODY, bodyId });
   }
 
+  addConstraint(constraint: ConstraintDescriptor): void {
+    if (!this.ws) return;
+    this.send({ type: MessageType.ADD_CONSTRAINT, constraint });
+  }
+
+  removeConstraint(constraintId: string): void {
+    if (!this.ws) return;
+    this.send({ type: MessageType.REMOVE_CONSTRAINT, constraintId });
+  }
+
   onStateUpdate(callback: StateUpdateCallback): void {
     this.stateUpdateCallbacks.push(callback);
   }
@@ -205,6 +220,14 @@ export class PhysicsSyncClient {
 
   onCollisionEvents(callback: CollisionEventsCallback): void {
     this.collisionEventsCallbacks.push(callback);
+  }
+
+  onConstraintAdded(callback: ConstraintAddedCallback): void {
+    this.constraintAddedCallbacks.push(callback);
+  }
+
+  onConstraintRemoved(callback: ConstraintRemovedCallback): void {
+    this.constraintRemovedCallbacks.push(callback);
   }
 
   startSimulation(): void {
@@ -319,6 +342,15 @@ export class PhysicsSyncClient {
           () => this.clockSync.getServerTick()
         );
 
+        // Notify about existing constraints
+        if (message.constraints) {
+          for (const c of message.constraints) {
+            for (const cb of this.constraintAddedCallbacks) {
+              cb(c);
+            }
+          }
+        }
+
         this.joinResolve?.(message.snapshot);
         this.joinResolve = null;
         break;
@@ -373,6 +405,16 @@ export class PhysicsSyncClient {
         // Re-initialize full state from fresh snapshot
         this.initFullState(message.snapshot.bodies);
 
+        // Notify about constraints included in reset
+        const simConstraints = (message as ServerMessage & { constraints?: ConstraintDescriptor[] }).constraints;
+        if (simConstraints) {
+          for (const c of simConstraints) {
+            for (const cb of this.constraintAddedCallbacks) {
+              cb(c);
+            }
+          }
+        }
+
         const startSnapshot = message.snapshot;
         for (const cb of this.simulationStartedCallbacks) {
           cb(startSnapshot);
@@ -383,6 +425,18 @@ export class PhysicsSyncClient {
       case MessageType.COLLISION_EVENTS:
         for (const cb of this.collisionEventsCallbacks) {
           cb(message.events);
+        }
+        break;
+
+      case MessageType.ADD_CONSTRAINT:
+        for (const cb of this.constraintAddedCallbacks) {
+          cb(message.constraint);
+        }
+        break;
+
+      case MessageType.REMOVE_CONSTRAINT:
+        for (const cb of this.constraintRemovedCallbacks) {
+          cb(message.constraintId);
         }
         break;
 

@@ -186,6 +186,31 @@ export class PhysicsServer {
         }
         break;
       }
+
+      case MessageType.ADD_CONSTRAINT: {
+        if (!conn.roomId) return;
+        const room = this.roomManager.getRoom(conn.roomId);
+        if (room) {
+          try {
+            room.addConstraint(message.constraint);
+          } catch (err) {
+            conn.send(encodeMessage({
+              type: MessageType.ERROR,
+              message: (err as Error).message,
+            }));
+          }
+        }
+        break;
+      }
+
+      case MessageType.REMOVE_CONSTRAINT: {
+        if (!conn.roomId) return;
+        const room = this.roomManager.getRoom(conn.roomId);
+        if (room) {
+          room.removeConstraint(message.constraintId);
+        }
+        break;
+      }
     }
   }
 

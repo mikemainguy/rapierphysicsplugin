@@ -25,10 +25,26 @@ import {
   PhysicsConstraintAxisLimitMode,
   PhysicsConstraintMotorType,
   PhysicsConstraintAxis,
+  PhysicsConstraintType,
   PhysicsEventType,
 } from '@babylonjs/core';
 import type { Mesh, TransformNode, Nullable } from '@babylonjs/core';
-import type { CollisionEventData } from '@rapierphysicsplugin/shared';
+import type { CollisionEventData, ConstraintDescriptor, Vec3 } from '@rapierphysicsplugin/shared';
+import { createJointData, axisToFrame } from '@rapierphysicsplugin/shared';
+
+interface AxisConfig {
+  mode?: PhysicsConstraintAxisLimitMode;
+  minLimit?: number;
+  maxLimit?: number;
+  friction?: number;
+  motorType?: PhysicsConstraintMotorType;
+  motorTarget?: number;
+  motorMaxForce?: number;
+}
+
+function v3toVec(v: Vector3): Vec3 {
+  return { x: v.x, y: v.y, z: v.z };
+}
 
 export class RapierPlugin implements IPhysicsEnginePluginV2 {
   public world: RAPIER.World;
@@ -49,6 +65,10 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
   private bodyCollisionObservables = new Map<PhysicsBody, Observable<IPhysicsCollisionEvent>>();
   private bodyCollisionEndedObservables = new Map<PhysicsBody, Observable<IBasePhysicsCollisionEvent>>();
   private constraintToJoint = new Map<PhysicsConstraint, RAPIER.ImpulseJoint>();
+  private constraintBodies = new Map<PhysicsConstraint, { body: PhysicsBody; childBody: PhysicsBody }>();
+  private constraintAxisState = new Map<PhysicsConstraint, Map<number, AxisConfig>>();
+  private constraintEnabled = new Map<PhysicsConstraint, boolean>();
+  private constraintDescriptors = new Map<PhysicsConstraint, { body: PhysicsBody; childBody: PhysicsBody }>();
   private collisionCallbackEnabled = new Set<PhysicsBody>();
   private collisionEndedCallbackEnabled = new Set<PhysicsBody>();
   private triggerShapes = new Set<PhysicsShape>();
@@ -549,12 +569,115 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
 
   // --- Constraints ---
 
-  initConstraint(_constraint: PhysicsConstraint, _body: PhysicsBody, _childBody: PhysicsBody): void {
-    // Basic constraint initialization — stub
+  private buildConstraintDescriptor(constraint: PhysicsConstraint): ConstraintDescriptor {
+    const opts = (constraint as any)._options ?? {};
+    const cType = (constraint as any)._type as PhysicsConstraintType;
+
+    let type: ConstraintDescriptor['type'];
+    switch (cType) {
+      case PhysicsConstraintType.BALL_AND_SOCKET: type = 'ball_and_socket'; break;
+      case PhysicsConstraintType.DISTANCE: type = 'distance'; break;
+      case PhysicsConstraintType.HINGE: type = 'hinge'; break;
+      case PhysicsConstraintType.SLIDER: type = 'slider'; break;
+      case PhysicsConstraintType.LOCK: type = 'lock'; break;
+      case PhysicsConstraintType.PRISMATIC: type = 'prismatic'; break;
+      case PhysicsConstraintType.SIX_DOF: type = 'six_dof'; break;
+      default: type = 'ball_and_socket';
+    }
+
+    // Detect spring: a 6DOF with stiffness/damping in limits
+    const sixDofLimits = (constraint as any).limits as Array<{ axis: number; minLimit?: number; maxLimit?: number; stiffness?: number; damping?: number }> | undefined;
+    let isSpring = false;
+    if (type === 'six_dof' && sixDofLimits) {
+      isSpring = sixDofLimits.some(l => l.stiffness !== undefined && l.stiffness > 0);
+    }
+
+    const desc: ConstraintDescriptor = {
+      id: '', // caller sets this
+      bodyIdA: '',
+      bodyIdB: '',
+      type: isSpring ? 'spring' : type,
+      pivotA: opts.pivotA ? v3toVec(opts.pivotA) : undefined,
+      pivotB: opts.pivotB ? v3toVec(opts.pivotB) : undefined,
+      axisA: opts.axisA ? v3toVec(opts.axisA) : undefined,
+      axisB: opts.axisB ? v3toVec(opts.axisB) : undefined,
+      perpAxisA: opts.perpAxisA ? v3toVec(opts.perpAxisA) : undefined,
+      perpAxisB: opts.perpAxisB ? v3toVec(opts.perpAxisB) : undefined,
+      maxDistance: opts.maxDistance,
+      collision: opts.collision,
+    };
+
+    if (isSpring && sixDofLimits) {
+      const springLimit = sixDofLimits.find(l => l.stiffness !== undefined);
+      if (springLimit) {
+        desc.stiffness = springLimit.stiffness;
+        desc.damping = springLimit.damping;
+      }
+    }
+
+    if (type === 'six_dof' && !isSpring && sixDofLimits) {
+      desc.limits = sixDofLimits.map(l => ({
+        axis: l.axis,
+        minLimit: l.minLimit,
+        maxLimit: l.maxLimit,
+      }));
+    }
+
+    return desc;
   }
 
-  addConstraint(_body: PhysicsBody, _childBody: PhysicsBody, _constraint: PhysicsConstraint, _instanceIndex?: number, _childInstanceIndex?: number): void {
-    // Add constraint — stub
+  private createJointFromConstraint(constraint: PhysicsConstraint, rbA: RAPIER.RigidBody, rbB: RAPIER.RigidBody): RAPIER.ImpulseJoint {
+    const desc = this.buildConstraintDescriptor(constraint);
+    const jointData = createJointData(this.rapier, desc);
+    return this.world.createImpulseJoint(jointData, rbA, rbB, true);
+  }
+
+  initConstraint(constraint: PhysicsConstraint, body: PhysicsBody, childBody: PhysicsBody): void {
+    if (this.constraintToJoint.has(constraint)) return;
+
+    const rbA = this.bodyToRigidBody.get(body);
+    const rbB = this.bodyToRigidBody.get(childBody);
+    if (!rbA || !rbB) return;
+
+    const joint = this.createJointFromConstraint(constraint, rbA, rbB);
+    this.constraintToJoint.set(constraint, joint);
+    this.constraintBodies.set(constraint, { body, childBody });
+    this.constraintEnabled.set(constraint, true);
+
+    // Apply collision setting
+    const opts = (constraint as any)._options;
+    if (opts?.collision === false) {
+      joint.setContactsEnabled(false);
+    }
+
+    // Apply initial limits for hinge/slider
+    this.applyInitialLimits(constraint, joint);
+  }
+
+  private applyInitialLimits(constraint: PhysicsConstraint, joint: RAPIER.ImpulseJoint): void {
+    const sixDofLimits = (constraint as any).limits as Array<{ axis: number; minLimit?: number; maxLimit?: number }> | undefined;
+    if (!sixDofLimits) return;
+
+    const cType = (constraint as any)._type as PhysicsConstraintType;
+    if (cType === PhysicsConstraintType.HINGE) {
+      // Revolute joint — apply angular X limits
+      const angLim = sixDofLimits.find(l => l.axis === PhysicsConstraintAxis.ANGULAR_X);
+      if (angLim && angLim.minLimit !== undefined && angLim.maxLimit !== undefined) {
+        (joint as any).setLimits?.(angLim.minLimit, angLim.maxLimit);
+      }
+    } else if (cType === PhysicsConstraintType.SLIDER || cType === PhysicsConstraintType.PRISMATIC) {
+      // Prismatic joint — apply linear X limits
+      const linLim = sixDofLimits.find(l => l.axis === PhysicsConstraintAxis.LINEAR_X);
+      if (linLim && linLim.minLimit !== undefined && linLim.maxLimit !== undefined) {
+        (joint as any).setLimits?.(linLim.minLimit, linLim.maxLimit);
+      }
+    }
+  }
+
+  addConstraint(body: PhysicsBody, childBody: PhysicsBody, constraint: PhysicsConstraint, _instanceIndex?: number, _childInstanceIndex?: number): void {
+    if (!this.constraintToJoint.has(constraint)) {
+      this.initConstraint(constraint, body, childBody);
+    }
   }
 
   disposeConstraint(constraint: PhysicsConstraint): void {
@@ -563,30 +686,201 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
       this.world.removeImpulseJoint(joint, true);
       this.constraintToJoint.delete(constraint);
     }
+    this.constraintBodies.delete(constraint);
+    this.constraintAxisState.delete(constraint);
+    this.constraintEnabled.delete(constraint);
+    this.constraintDescriptors.delete(constraint);
   }
 
-  setEnabled(_constraint: PhysicsConstraint, _isEnabled: boolean): void {}
-  getEnabled(_constraint: PhysicsConstraint): boolean { return true; }
-  setCollisionsEnabled(_constraint: PhysicsConstraint, _isEnabled: boolean): void {}
-  getCollisionsEnabled(_constraint: PhysicsConstraint): boolean { return true; }
+  setEnabled(constraint: PhysicsConstraint, isEnabled: boolean): void {
+    const currentlyEnabled = this.constraintEnabled.get(constraint) ?? true;
+    if (isEnabled === currentlyEnabled) return;
 
-  setAxisFriction(_constraint: PhysicsConstraint, _axis: PhysicsConstraintAxis, _friction: number): void {}
-  getAxisFriction(_constraint: PhysicsConstraint, _axis: PhysicsConstraintAxis): Nullable<number> { return null; }
-  setAxisMode(_constraint: PhysicsConstraint, _axis: PhysicsConstraintAxis, _limitMode: PhysicsConstraintAxisLimitMode): void {}
-  getAxisMode(_constraint: PhysicsConstraint, _axis: PhysicsConstraintAxis): Nullable<PhysicsConstraintAxisLimitMode> { return null; }
-  setAxisMinLimit(_constraint: PhysicsConstraint, _axis: PhysicsConstraintAxis, _minLimit: number): void {}
-  getAxisMinLimit(_constraint: PhysicsConstraint, _axis: PhysicsConstraintAxis): Nullable<number> { return null; }
-  setAxisMaxLimit(_constraint: PhysicsConstraint, _axis: PhysicsConstraintAxis, _limit: number): void {}
-  getAxisMaxLimit(_constraint: PhysicsConstraint, _axis: PhysicsConstraintAxis): Nullable<number> { return null; }
-  setAxisMotorType(_constraint: PhysicsConstraint, _axis: PhysicsConstraintAxis, _motorType: PhysicsConstraintMotorType): void {}
-  getAxisMotorType(_constraint: PhysicsConstraint, _axis: PhysicsConstraintAxis): Nullable<PhysicsConstraintMotorType> { return null; }
-  setAxisMotorTarget(_constraint: PhysicsConstraint, _axis: PhysicsConstraintAxis, _target: number): void {}
-  getAxisMotorTarget(_constraint: PhysicsConstraint, _axis: PhysicsConstraintAxis): Nullable<number> { return null; }
-  setAxisMotorMaxForce(_constraint: PhysicsConstraint, _axis: PhysicsConstraintAxis, _maxForce: number): void {}
-  getAxisMotorMaxForce(_constraint: PhysicsConstraint, _axis: PhysicsConstraintAxis): Nullable<number> { return null; }
+    if (!isEnabled) {
+      // Disable: remove the joint
+      const joint = this.constraintToJoint.get(constraint);
+      if (joint) {
+        this.world.removeImpulseJoint(joint, true);
+        this.constraintToJoint.delete(constraint);
+      }
+      this.constraintEnabled.set(constraint, false);
+    } else {
+      // Enable: re-create the joint
+      const pair = this.constraintBodies.get(constraint);
+      if (pair) {
+        const rbA = this.bodyToRigidBody.get(pair.body);
+        const rbB = this.bodyToRigidBody.get(pair.childBody);
+        if (rbA && rbB) {
+          const joint = this.createJointFromConstraint(constraint, rbA, rbB);
+          this.constraintToJoint.set(constraint, joint);
 
-  getBodiesUsingConstraint(_constraint: PhysicsConstraint): ConstrainedBodyPair[] {
-    return [];
+          const opts = (constraint as any)._options;
+          if (opts?.collision === false) {
+            joint.setContactsEnabled(false);
+          }
+        }
+      }
+      this.constraintEnabled.set(constraint, true);
+    }
+  }
+
+  getEnabled(constraint: PhysicsConstraint): boolean {
+    return this.constraintEnabled.get(constraint) ?? true;
+  }
+
+  setCollisionsEnabled(constraint: PhysicsConstraint, isEnabled: boolean): void {
+    const joint = this.constraintToJoint.get(constraint);
+    if (joint) {
+      joint.setContactsEnabled(isEnabled);
+    }
+  }
+
+  getCollisionsEnabled(constraint: PhysicsConstraint): boolean {
+    const joint = this.constraintToJoint.get(constraint);
+    if (joint) {
+      return joint.contactsEnabled();
+    }
+    return true;
+  }
+
+  private ensureAxisConfig(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): AxisConfig {
+    let axisMap = this.constraintAxisState.get(constraint);
+    if (!axisMap) {
+      axisMap = new Map();
+      this.constraintAxisState.set(constraint, axisMap);
+    }
+    let config = axisMap.get(axis);
+    if (!config) {
+      config = {};
+      axisMap.set(axis, config);
+    }
+    return config;
+  }
+
+  private getAxisConfig(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): AxisConfig | undefined {
+    return this.constraintAxisState.get(constraint)?.get(axis);
+  }
+
+  setAxisFriction(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, friction: number): void {
+    this.ensureAxisConfig(constraint, axis).friction = friction;
+  }
+
+  getAxisFriction(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<number> {
+    return this.getAxisConfig(constraint, axis)?.friction ?? null;
+  }
+
+  setAxisMode(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, limitMode: PhysicsConstraintAxisLimitMode): void {
+    this.ensureAxisConfig(constraint, axis).mode = limitMode;
+    this.applyAxisLimitsToJoint(constraint, axis);
+  }
+
+  getAxisMode(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<PhysicsConstraintAxisLimitMode> {
+    return this.getAxisConfig(constraint, axis)?.mode ?? null;
+  }
+
+  setAxisMinLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, minLimit: number): void {
+    this.ensureAxisConfig(constraint, axis).minLimit = minLimit;
+    this.applyAxisLimitsToJoint(constraint, axis);
+  }
+
+  getAxisMinLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<number> {
+    return this.getAxisConfig(constraint, axis)?.minLimit ?? null;
+  }
+
+  setAxisMaxLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, limit: number): void {
+    this.ensureAxisConfig(constraint, axis).maxLimit = limit;
+    this.applyAxisLimitsToJoint(constraint, axis);
+  }
+
+  getAxisMaxLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<number> {
+    return this.getAxisConfig(constraint, axis)?.maxLimit ?? null;
+  }
+
+  private applyAxisLimitsToJoint(constraint: PhysicsConstraint, _axis: PhysicsConstraintAxis): void {
+    const joint = this.constraintToJoint.get(constraint);
+    if (!joint) return;
+
+    const cType = (constraint as any)._type as PhysicsConstraintType;
+
+    // For single-DOF joints (hinge/slider), apply limits directly
+    if (cType === PhysicsConstraintType.HINGE) {
+      const angConfig = this.getAxisConfig(constraint, PhysicsConstraintAxis.ANGULAR_X);
+      if (angConfig?.minLimit !== undefined && angConfig?.maxLimit !== undefined) {
+        (joint as any).setLimits?.(angConfig.minLimit, angConfig.maxLimit);
+      }
+    } else if (cType === PhysicsConstraintType.SLIDER || cType === PhysicsConstraintType.PRISMATIC) {
+      const linConfig = this.getAxisConfig(constraint, PhysicsConstraintAxis.LINEAR_X);
+      if (linConfig?.minLimit !== undefined && linConfig?.maxLimit !== undefined) {
+        (joint as any).setLimits?.(linConfig.minLimit, linConfig.maxLimit);
+      }
+    }
+  }
+
+  setAxisMotorType(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, motorType: PhysicsConstraintMotorType): void {
+    this.ensureAxisConfig(constraint, axis).motorType = motorType;
+    this.applyMotorToJoint(constraint);
+  }
+
+  getAxisMotorType(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<PhysicsConstraintMotorType> {
+    return this.getAxisConfig(constraint, axis)?.motorType ?? null;
+  }
+
+  setAxisMotorTarget(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, target: number): void {
+    this.ensureAxisConfig(constraint, axis).motorTarget = target;
+    this.applyMotorToJoint(constraint);
+  }
+
+  getAxisMotorTarget(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<number> {
+    return this.getAxisConfig(constraint, axis)?.motorTarget ?? null;
+  }
+
+  setAxisMotorMaxForce(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, maxForce: number): void {
+    this.ensureAxisConfig(constraint, axis).motorMaxForce = maxForce;
+    this.applyMotorToJoint(constraint);
+  }
+
+  getAxisMotorMaxForce(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<number> {
+    return this.getAxisConfig(constraint, axis)?.motorMaxForce ?? null;
+  }
+
+  private applyMotorToJoint(constraint: PhysicsConstraint): void {
+    const joint = this.constraintToJoint.get(constraint);
+    if (!joint) return;
+
+    const cType = (constraint as any)._type as PhysicsConstraintType;
+
+    if (cType === PhysicsConstraintType.HINGE) {
+      const config = this.getAxisConfig(constraint, PhysicsConstraintAxis.ANGULAR_X);
+      if (config?.motorTarget !== undefined) {
+        const maxForce = config.motorMaxForce ?? 1000;
+        if (config.motorType === PhysicsConstraintMotorType.VELOCITY) {
+          (joint as any).configureMotorVelocity?.(config.motorTarget, maxForce);
+        } else {
+          (joint as any).configureMotorPosition?.(config.motorTarget, maxForce, 0);
+        }
+      }
+    } else if (cType === PhysicsConstraintType.SLIDER || cType === PhysicsConstraintType.PRISMATIC) {
+      const config = this.getAxisConfig(constraint, PhysicsConstraintAxis.LINEAR_X);
+      if (config?.motorTarget !== undefined) {
+        const maxForce = config.motorMaxForce ?? 1000;
+        if (config.motorType === PhysicsConstraintMotorType.VELOCITY) {
+          (joint as any).configureMotorVelocity?.(config.motorTarget, maxForce);
+        } else {
+          (joint as any).configureMotorPosition?.(config.motorTarget, maxForce, 0);
+        }
+      }
+    }
+  }
+
+  getBodiesUsingConstraint(constraint: PhysicsConstraint): ConstrainedBodyPair[] {
+    const pair = this.constraintBodies.get(constraint);
+    if (!pair) return [];
+    return [{
+      parentBody: pair.body,
+      parentBodyIndex: 0,
+      childBody: pair.childBody,
+      childBodyIndex: 0,
+    }];
   }
 
   // --- Collision observables ---
@@ -641,6 +935,10 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
     this.shapeToColliderDesc.clear();
     this.shapeTypeMap.clear();
     this.constraintToJoint.clear();
+    this.constraintBodies.clear();
+    this.constraintAxisState.clear();
+    this.constraintEnabled.clear();
+    this.constraintDescriptors.clear();
     this.collisionCallbackEnabled.clear();
     this.collisionEndedCallbackEnabled.clear();
     this.triggerShapes.clear();

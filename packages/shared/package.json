@@ -9,6 +9,7 @@
     "build": "tsc"
   },
   "devDependencies": {
+    "@dimforge/rapier3d-compat": "^0.14.0",
     "typescript": "^5.4.0"
   },
   "dependencies": {

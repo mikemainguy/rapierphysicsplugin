@@ -2,6 +2,7 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import type {
   BodyDescriptor,
   CollisionEventData,
+  ConstraintDescriptor,
   RoomSnapshot,
   Vec3,
 } from '@rapierphysicsplugin/shared';
@@ -25,6 +26,8 @@ export class Room {
   private clients: Map<string, ClientConnection> = new Map();
   private inputBuffers: Map<string, InputBuffer> = new Map();
   private initialBodies: BodyDescriptor[] = [];
+  private initialConstraints: ConstraintDescriptor[] = [];
+  private activeConstraints: Map<string, ConstraintDescriptor> = new Map();
   private currentTick = 0;
   private ticksSinceLastBroadcast = 0;
   private pendingCollisionEvents: CollisionEventData[] = [];
@@ -36,9 +39,14 @@ export class Room {
     this.stateManager = new StateManager();
   }
 
-  loadInitialState(bodies: BodyDescriptor[]): void {
+  loadInitialState(bodies: BodyDescriptor[], constraints?: ConstraintDescriptor[]): void {
     this.initialBodies = bodies;
+    this.initialConstraints = constraints ?? [];
     this.physicsWorld.loadState(bodies);
+    for (const c of this.initialConstraints) {
+      this.physicsWorld.addConstraint(c);
+      this.activeConstraints.set(c.id, c);
+    }
   }
 
   addClient(conn: ClientConnection): void {
@@ -46,8 +54,9 @@ export class Room {
     this.inputBuffers.set(conn.id, new InputBuffer());
     conn.roomId = this.id;
 
-    // Send full state snapshot to the joining client, including body ID mapping
+    // Send full state snapshot to the joining client, including body ID mapping and constraints
     const snapshot = this.stateManager.createSnapshot(this.physicsWorld, this.currentTick);
+    const constraints = Array.from(this.activeConstraints.values());
     conn.send(encodeMessage({
       type: MessageType.ROOM_JOINED,
       roomId: this.id,
@@ -55,6 +64,7 @@ export class Room {
       clientId: conn.id,
       simulationRunning: this.simulationLoop.isRunning,
       bodyIdMap: this.stateManager.getIdToIndexRecord(),
+      constraints: constraints.length > 0 ? constraints : undefined,
     }));
   }
 
@@ -91,6 +101,30 @@ export class Room {
     this.broadcast(encodeMessage({
       type: MessageType.REMOVE_BODY,
       bodyId,
+    }));
+  }
+
+  addConstraint(descriptor: ConstraintDescriptor): string {
+    const id = this.physicsWorld.addConstraint(descriptor);
+    this.activeConstraints.set(id, descriptor);
+
+    // Broadcast to all clients
+    this.broadcast(encodeMessage({
+      type: MessageType.ADD_CONSTRAINT,
+      constraint: descriptor,
+    }));
+
+    return id;
+  }
+
+  removeConstraint(constraintId: string): void {
+    this.physicsWorld.removeConstraint(constraintId);
+    this.activeConstraints.delete(constraintId);
+
+    // Broadcast to all clients
+    this.broadcast(encodeMessage({
+      type: MessageType.REMOVE_CONSTRAINT,
+      constraintId,
     }));
   }
 
@@ -176,8 +210,8 @@ export class Room {
       this.simulationLoop.stop();
     }
 
-    // Reset physics world to initial state
-    this.physicsWorld.reset(this.initialBodies);
+    // Reset physics world to initial state (including constraints)
+    this.physicsWorld.reset(this.initialBodies, this.initialConstraints);
     this.currentTick = 0;
     this.ticksSinceLastBroadcast = 0;
     this.pendingCollisionEvents = [];
@@ -186,15 +220,23 @@ export class Room {
       buffer.clear();
     }
 
+    // Reset active constraints to initial set
+    this.activeConstraints.clear();
+    for (const c of this.initialConstraints) {
+      this.activeConstraints.set(c.id, c);
+    }
+
     // Start simulation loop
     this.simulationLoop.start();
 
-    // Broadcast fresh snapshot to all clients (includes updated body ID mapping)
+    // Broadcast fresh snapshot to all clients (includes updated body ID mapping and constraints)
     const snapshot = this.stateManager.createSnapshot(this.physicsWorld, this.currentTick);
+    const constraints = Array.from(this.activeConstraints.values());
     this.broadcast(encodeMessage({
       type: MessageType.SIMULATION_STARTED,
       snapshot,
       bodyIdMap: this.stateManager.getIdToIndexRecord(),
+      constraints: constraints.length > 0 ? constraints : undefined,
     }));
   }
 
@@ -218,6 +260,7 @@ export class Room {
     this.clients.clear();
     this.inputBuffers.clear();
     this.pendingCollisionEvents = [];
+    this.activeConstraints.clear();
     this.stateManager.clear();
     this.physicsWorld.destroy();
   }
@@ -231,14 +274,14 @@ export class RoomManager {
     this.rapier = rapier;
   }
 
-  createRoom(roomId: string, initialBodies: BodyDescriptor[] = [], gravity?: Vec3): Room {
+  createRoom(roomId: string, initialBodies: BodyDescriptor[] = [], gravity?: Vec3, initialConstraints?: ConstraintDescriptor[]): Room {
     if (this.rooms.has(roomId)) {
       throw new Error(`Room "${roomId}" already exists`);
     }
 
     const room = new Room(roomId, this.rapier, gravity);
-    if (initialBodies.length > 0) {
-      room.loadInitialState(initialBodies);
+    if (initialBodies.length > 0 || (initialConstraints && initialConstraints.length > 0)) {
+      room.loadInitialState(initialBodies, initialConstraints);
     }
     this.rooms.set(roomId, room);
     return room;

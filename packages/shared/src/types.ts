@@ -116,3 +116,40 @@ export interface ClientInput {
   sequenceNum: number;
   actions: InputAction[];
 }
+
+// --- Constraint types ---
+
+export type ConstraintType =
+  | 'ball_and_socket'
+  | 'distance'
+  | 'hinge'
+  | 'slider'
+  | 'lock'
+  | 'prismatic'
+  | 'six_dof'
+  | 'spring';
+
+export interface ConstraintDescriptor {
+  id: string;
+  bodyIdA: string;
+  bodyIdB: string;
+  type: ConstraintType;
+  pivotA?: Vec3;
+  pivotB?: Vec3;
+  axisA?: Vec3;
+  axisB?: Vec3;
+  perpAxisA?: Vec3;
+  perpAxisB?: Vec3;
+  maxDistance?: number;
+  // Spring-specific
+  stiffness?: number;
+  damping?: number;
+  minDistance?: number;
+  // 6DOF limits
+  limits?: Array<{
+    axis: number;
+    minLimit?: number;
+    maxLimit?: number;
+  }>;
+  collision?: boolean;
+}

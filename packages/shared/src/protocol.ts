@@ -3,6 +3,7 @@ import type {
   BodyState,
   ClientInput,
   CollisionEventData,
+  ConstraintDescriptor,
   RoomSnapshot,
   Vec3,
 } from './types.js';
@@ -23,6 +24,8 @@ export enum MessageType {
   START_SIMULATION = 'start_simulation',
   SIMULATION_STARTED = 'simulation_started',
   COLLISION_EVENTS = 'collision_events',
+  ADD_CONSTRAINT = 'add_constraint',
+  REMOVE_CONSTRAINT = 'remove_constraint',
   ERROR = 'error',
 }
 
@@ -76,6 +79,16 @@ export interface BodyEventMessage {
   data: unknown;
 }
 
+export interface AddConstraintMessage {
+  type: MessageType.ADD_CONSTRAINT;
+  constraint: ConstraintDescriptor;
+}
+
+export interface RemoveConstraintMessage {
+  type: MessageType.REMOVE_CONSTRAINT;
+  constraintId: string;
+}
+
 // --- Server → Client messages ---
 
 export interface ClockSyncResponseMessage {
@@ -91,6 +104,7 @@ export interface RoomJoinedMessage {
   clientId: string;
   simulationRunning: boolean;
   bodyIdMap?: Record<string, number>;
+  constraints?: ConstraintDescriptor[];
 }
 
 export interface RoomStateMessage {
@@ -110,6 +124,7 @@ export interface SimulationStartedMessage {
   type: MessageType.SIMULATION_STARTED;
   snapshot: RoomSnapshot;
   bodyIdMap?: Record<string, number>;
+  constraints?: ConstraintDescriptor[];
 }
 
 export interface CollisionEventsMessage {
@@ -132,7 +147,9 @@ export type ClientMessage =
   | RemoveBodyMessage
   | CreateRoomMessage
   | StartSimulationMessage
-  | BodyEventMessage;
+  | BodyEventMessage
+  | AddConstraintMessage
+  | RemoveConstraintMessage;
 
 export type ServerMessage =
   | ClockSyncResponseMessage
@@ -144,4 +161,6 @@ export type ServerMessage =
   | ErrorMessage
   | AddBodyMessage
   | RemoveBodyMessage
-  | BodyEventMessage;
+  | BodyEventMessage
+  | AddConstraintMessage
+  | RemoveConstraintMessage;
