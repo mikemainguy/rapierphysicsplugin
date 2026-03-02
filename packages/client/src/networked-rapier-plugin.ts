@@ -30,7 +30,13 @@ import type {
   MeshBinaryMessage,
   ComputeConfig,
 } from '@rapierphysicsplugin/shared';
-import { encodeMeshBinary } from '@rapierphysicsplugin/shared';
+import {
+  encodeMeshBinary,
+  computeGeometryHash,
+  encodeGeometryDef,
+  encodeMeshRef,
+} from '@rapierphysicsplugin/shared';
+import type { GeometryDefData, MeshRefData } from '@rapierphysicsplugin/shared';
 import { RapierPlugin } from './rapier-plugin.js';
 import { PhysicsSyncClient } from './sync-client.js';
 
@@ -87,6 +93,10 @@ export class NetworkedRapierPlugin extends RapierPlugin {
   private remoteBodyCreationIds = new Set<string>();
   private remoteBodies = new Set<string>();
 
+  // Geometry registry (content-hash deduplication)
+  private geometryCache: Map<string, GeometryDefData> = new Map();
+  private sentGeometryHashes: Set<string> = new Set();
+
   // Collision event counter
   private collisionCount = 0;
 
@@ -116,6 +126,8 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     this.syncClient.onBodyAdded((descriptor) => this.handleBodyAdded(descriptor));
     this.syncClient.onBodyRemoved((bodyId) => this.handleBodyRemoved(bodyId));
     this.syncClient.onMeshBinary((msg) => this.handleMeshBinaryReceived(msg));
+    this.syncClient.onGeometryDef((data) => this.handleGeometryDefReceived(data));
+    this.syncClient.onMeshRef((data) => this.handleMeshRefReceived(data));
     this.syncClient.onSimulationStarted((freshSnapshot) => this.handleSimulationStarted(freshSnapshot));
     this.syncClient.onCollisionEvents((events) => {
       this.collisionCount += events.length;
@@ -351,6 +363,8 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     this.idToBody.clear();
     this.pendingBodies.clear();
     this.remoteBodies.clear();
+    this.geometryCache.clear();
+    this.sentGeometryHashes.clear();
     this.collisionCount = 0;
 
     // Dispose all existing physics bodies and their meshes
@@ -465,16 +479,28 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     const colorsRaw = mesh.getVerticesData('color');
     const colors = colorsRaw ? new Float32Array(colorsRaw) : undefined;
 
-    let diffuseColor: { r: number; g: number; b: number } | undefined;
-    let specularColor: { r: number; g: number; b: number } | undefined;
+    let diffuseColor: { r: number; g: number; b: number } = { r: 0.5, g: 0.5, b: 0.5 };
+    let specularColor: { r: number; g: number; b: number } = { r: 0.3, g: 0.3, b: 0.3 };
     const mat = mesh.material as StandardMaterial | null;
     if (mat) {
       diffuseColor = { r: mat.diffuseColor.r, g: mat.diffuseColor.g, b: mat.diffuseColor.b };
       specularColor = { r: mat.specularColor.r, g: mat.specularColor.g, b: mat.specularColor.b };
     }
 
-    const encoded = encodeMeshBinary(bodyId, positions, normals, uvs, colors, indices, diffuseColor, specularColor);
-    this.syncClient.sendMeshBinary(encoded);
+    // Content-hash deduplication: send GEOMETRY_DEF only once per unique geometry
+    const hash = computeGeometryHash(positions, normals, uvs, colors, indices);
+
+    if (!this.sentGeometryHashes.has(hash)) {
+      const geomEncoded = encodeGeometryDef(hash, positions, normals, uvs, colors, indices);
+      this.syncClient.sendGeometryDef(geomEncoded);
+      this.sentGeometryHashes.add(hash);
+      // Cache locally so we can apply geometry if we receive a MeshRef for our own hash
+      this.geometryCache.set(hash, { hash, positions, normals, uvs, colors, indices });
+    }
+
+    // Always send MESH_REF (small ~50-byte message per body)
+    const refEncoded = encodeMeshRef(bodyId, hash, diffuseColor, specularColor);
+    this.syncClient.sendMeshRef(refEncoded);
   }
 
   private handleMeshBinaryReceived(msg: MeshBinaryMessage): void {
@@ -509,6 +535,45 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     if (msg.specularColor) {
       mat.specularColor = new Color3(msg.specularColor.r, msg.specularColor.g, msg.specularColor.b);
     }
+    mesh.material = mat;
+  }
+
+  private handleGeometryDefReceived(data: GeometryDefData): void {
+    // Cache the geometry and mark the hash as known
+    this.geometryCache.set(data.hash, data);
+    this.sentGeometryHashes.add(data.hash);
+  }
+
+  private handleMeshRefReceived(data: MeshRefData): void {
+    const body = this.idToBody.get(data.bodyId);
+    if (!body) return;
+
+    const scene = this.scene;
+    if (!scene) return;
+
+    const tn = body.transformNode;
+    if (!tn) return;
+
+    const geom = this.geometryCache.get(data.geometryHash);
+    if (!geom) return;
+
+    const mesh = tn as Mesh;
+
+    // Apply geometry from the cached GEOMETRY_DEF
+    const vertexData = new VertexData();
+    vertexData.positions = geom.positions;
+    if (geom.normals) vertexData.normals = geom.normals;
+    if (geom.uvs) vertexData.uvs = geom.uvs;
+    if (geom.colors) vertexData.colors = geom.colors;
+    vertexData.indices = geom.indices;
+    vertexData.applyToMesh(mesh);
+
+    // Apply material colors from the MESH_REF
+    const oldMat = mesh.material;
+    if (oldMat) oldMat.dispose();
+    const mat = new StandardMaterial(`${data.bodyId}Mat_ref`, scene);
+    mat.diffuseColor = new Color3(data.diffuseColor.r, data.diffuseColor.g, data.diffuseColor.b);
+    mat.specularColor = new Color3(data.specularColor.r, data.specularColor.g, data.specularColor.b);
     mesh.material = mat;
   }
 

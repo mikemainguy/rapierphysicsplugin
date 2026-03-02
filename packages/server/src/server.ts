@@ -7,7 +7,8 @@ import {
   encodeMessage,
   DEFAULT_PORT,
   OPCODE_MESH_BINARY,
-  readBodyIdFromMeshBinary,
+  OPCODE_GEOMETRY_DEF,
+  OPCODE_MESH_REF,
 } from '@rapierphysicsplugin/shared';
 import type { ClientMessage } from '@rapierphysicsplugin/shared';
 import { RoomManager } from './room.js';
@@ -68,6 +69,28 @@ export class PhysicsServer {
             const room = this.roomManager.getRoom(conn.roomId);
             if (room) {
               room.relayMeshBinary(conn.id, buf);
+            }
+          }
+          return;
+        }
+
+        // Intercept geometry def — relay/store without full decode
+        if (buf[0] === OPCODE_GEOMETRY_DEF) {
+          if (conn.roomId) {
+            const room = this.roomManager.getRoom(conn.roomId);
+            if (room) {
+              room.relayGeometryDef(conn.id, buf);
+            }
+          }
+          return;
+        }
+
+        // Intercept mesh ref — relay/store without full decode
+        if (buf[0] === OPCODE_MESH_REF) {
+          if (conn.roomId) {
+            const room = this.roomManager.getRoom(conn.roomId);
+            if (room) {
+              room.relayMeshRef(conn.id, buf);
             }
           }
           return;

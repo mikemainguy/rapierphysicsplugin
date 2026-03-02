@@ -19,8 +19,12 @@ import {
   FIELD_ANG_VEL,
   OPCODE_MESH_BINARY,
   decodeMeshBinary,
+  OPCODE_GEOMETRY_DEF,
+  OPCODE_MESH_REF,
+  decodeGeometryDef,
+  decodeMeshRef,
 } from '@rapierphysicsplugin/shared';
-import type { MeshBinaryMessage } from '@rapierphysicsplugin/shared';
+import type { MeshBinaryMessage, GeometryDefData, MeshRefData } from '@rapierphysicsplugin/shared';
 import { ClockSyncClient } from './clock-sync.js';
 import { StateReconciler } from './state-reconciler.js';
 import { Interpolator } from './interpolator.js';
@@ -34,6 +38,8 @@ type CollisionEventsCallback = (events: CollisionEventData[]) => void;
 type ConstraintAddedCallback = (constraint: ConstraintDescriptor) => void;
 type ConstraintRemovedCallback = (constraintId: string) => void;
 type MeshBinaryCallback = (msg: MeshBinaryMessage) => void;
+type GeometryDefCallback = (data: GeometryDefData) => void;
+type MeshRefCallback = (data: MeshRefData) => void;
 
 export class PhysicsSyncClient {
   private ws: WebSocket | null = null;
@@ -61,6 +67,8 @@ export class PhysicsSyncClient {
   private constraintAddedCallbacks: ConstraintAddedCallback[] = [];
   private constraintRemovedCallbacks: ConstraintRemovedCallback[] = [];
   private meshBinaryCallbacks: MeshBinaryCallback[] = [];
+  private geometryDefCallbacks: GeometryDefCallback[] = [];
+  private meshRefCallbacks: MeshRefCallback[] = [];
 
   private connectResolve: (() => void) | null = null;
   private connectReject: ((err: Error) => void) | null = null;
@@ -110,6 +118,24 @@ export class PhysicsSyncClient {
             const msg: MeshBinaryMessage = { type: MessageType.MESH_BINARY, ...decoded };
             for (const cb of this.meshBinaryCallbacks) {
               cb(msg);
+            }
+            return;
+          }
+
+          // Intercept geometry def messages
+          if (buf[0] === OPCODE_GEOMETRY_DEF) {
+            const decoded = decodeGeometryDef(buf);
+            for (const cb of this.geometryDefCallbacks) {
+              cb(decoded);
+            }
+            return;
+          }
+
+          // Intercept mesh ref messages
+          if (buf[0] === OPCODE_MESH_REF) {
+            const decoded = decodeMeshRef(buf);
+            for (const cb of this.meshRefCallbacks) {
+              cb(decoded);
             }
             return;
           }
@@ -248,8 +274,32 @@ export class PhysicsSyncClient {
     this.meshBinaryCallbacks.push(callback);
   }
 
+  onGeometryDef(callback: GeometryDefCallback): void {
+    this.geometryDefCallbacks.push(callback);
+  }
+
+  onMeshRef(callback: MeshRefCallback): void {
+    this.meshRefCallbacks.push(callback);
+  }
+
   /** Send pre-encoded binary mesh data directly over the WebSocket (no msgpackr wrapping). */
   sendMeshBinary(encoded: Uint8Array): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this._bytesSent += encoded.byteLength;
+      this.ws.send(encoded);
+    }
+  }
+
+  /** Send pre-encoded GEOMETRY_DEF directly over the WebSocket. */
+  sendGeometryDef(encoded: Uint8Array): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this._bytesSent += encoded.byteLength;
+      this.ws.send(encoded);
+    }
+  }
+
+  /** Send pre-encoded MESH_REF directly over the WebSocket. */
+  sendMeshRef(encoded: Uint8Array): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this._bytesSent += encoded.byteLength;
       this.ws.send(encoded);

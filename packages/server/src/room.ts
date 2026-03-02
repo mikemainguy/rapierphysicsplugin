@@ -12,6 +12,9 @@ import {
   encodeMessage,
   encodeRoomState,
   readBodyIdFromMeshBinary,
+  readHashFromGeometryDef,
+  readBodyIdFromMeshRef,
+  readGeometryHashFromMeshRef,
 } from '@rapierphysicsplugin/shared';
 import { PhysicsWorld } from './physics-world.js';
 import { SimulationLoop } from './simulation-loop.js';
@@ -31,6 +34,9 @@ export class Room {
   private activeConstraints: Map<string, ConstraintDescriptor> = new Map();
   private activeBodies: Map<string, BodyDescriptor> = new Map();
   private meshBinaryStore: Map<string, Uint8Array> = new Map();
+  private geometryStore: Map<string, Uint8Array> = new Map();
+  private meshRefStore: Map<string, Uint8Array> = new Map();
+  private geometryRefCount: Map<string, Set<string>> = new Map();
   private currentTick = 0;
   private ticksSinceLastBroadcast = 0;
   private pendingCollisionEvents: CollisionEventData[] = [];
@@ -79,6 +85,14 @@ export class Room {
     for (const [, meshData] of this.meshBinaryStore) {
       conn.send(meshData);
     }
+
+    // Send geometry defs before mesh refs (order matters for cache population)
+    for (const [, geomData] of this.geometryStore) {
+      conn.send(geomData);
+    }
+    for (const [, refData] of this.meshRefStore) {
+      conn.send(refData);
+    }
   }
 
   removeClient(conn: ClientConnection): void {
@@ -115,6 +129,17 @@ export class Room {
     this.stateManager.removeBody(bodyId);
     this.activeBodies.delete(bodyId);
     this.meshBinaryStore.delete(bodyId);
+
+    // Clean up geometry registry refs (keep geometry def for reuse)
+    const refData = this.meshRefStore.get(bodyId);
+    if (refData) {
+      const geoHash = readGeometryHashFromMeshRef(refData);
+      const refs = this.geometryRefCount.get(geoHash);
+      if (refs) {
+        refs.delete(bodyId);
+      }
+      this.meshRefStore.delete(bodyId);
+    }
 
     // Notify all clients
     this.broadcast(encodeMessage({
@@ -154,6 +179,45 @@ export class Room {
     this.meshBinaryStore.set(bodyId, new Uint8Array(data));
 
     // Broadcast raw bytes to all clients except sender
+    for (const [clientId, client] of this.clients) {
+      if (clientId !== senderId) {
+        client.send(data);
+      }
+    }
+  }
+
+  relayGeometryDef(senderId: string, data: Uint8Array): void {
+    const hash = readHashFromGeometryDef(data);
+
+    // Store if new (skip if already stored — another client already sent this geometry)
+    if (!this.geometryStore.has(hash)) {
+      this.geometryStore.set(hash, new Uint8Array(data));
+    }
+
+    // Relay to all clients except sender
+    for (const [clientId, client] of this.clients) {
+      if (clientId !== senderId) {
+        client.send(data);
+      }
+    }
+  }
+
+  relayMeshRef(senderId: string, data: Uint8Array): void {
+    const bodyId = readBodyIdFromMeshRef(data);
+    const geoHash = readGeometryHashFromMeshRef(data);
+
+    // Always store + relay
+    this.meshRefStore.set(bodyId, new Uint8Array(data));
+
+    // Track ref count
+    let refs = this.geometryRefCount.get(geoHash);
+    if (!refs) {
+      refs = new Set();
+      this.geometryRefCount.set(geoHash, refs);
+    }
+    refs.add(bodyId);
+
+    // Relay to all clients except sender
     for (const [clientId, client] of this.clients) {
       if (clientId !== senderId) {
         client.send(data);
@@ -249,6 +313,9 @@ export class Room {
     this.ticksSinceLastBroadcast = 0;
     this.pendingCollisionEvents = [];
     this.meshBinaryStore.clear();
+    this.geometryStore.clear();
+    this.meshRefStore.clear();
+    this.geometryRefCount.clear();
     this.stateManager.clear();
     for (const [, buffer] of this.inputBuffers) {
       buffer.clear();
@@ -303,6 +370,9 @@ export class Room {
     this.activeConstraints.clear();
     this.activeBodies.clear();
     this.meshBinaryStore.clear();
+    this.geometryStore.clear();
+    this.meshRefStore.clear();
+    this.geometryRefCount.clear();
     this.stateManager.clear();
     this.physicsWorld.destroy();
   }
