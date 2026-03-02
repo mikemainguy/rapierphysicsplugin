@@ -28,6 +28,7 @@ import type {
   RoomSnapshot,
   MotionType,
   MeshBinaryMessage,
+  ComputeConfig,
 } from '@rapierphysicsplugin/shared';
 import { encodeMeshBinary } from '@rapierphysicsplugin/shared';
 import { RapierPlugin } from './rapier-plugin.js';
@@ -44,6 +45,7 @@ const staticColor = new Color3(0.4, 0.4, 0.45);
 export interface NetworkedRapierPluginConfig {
   serverUrl: string;
   roomId: string;
+  compute?: ComputeConfig;
 }
 
 interface PendingBodyInfo {

@@ -21,7 +21,7 @@ export class PhysicsWorld {
 
   constructor(rapier: typeof RAPIER, gravity: Vec3 = { x: 0, y: -9.81, z: 0 }) {
     this.rapier = rapier;
-    this.world = new rapier.World(new rapier.Vector3(gravity.x, gravity.y, gravity.z));
+    this.world = new rapier.World({ x: gravity.x, y: gravity.y, z: gravity.z });
     this.world.timestep = FIXED_TIMESTEP;
     this.eventQueue = new rapier.EventQueue(true);
   }

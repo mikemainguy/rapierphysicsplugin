@@ -1,4 +1,3 @@
-import RAPIER from '@dimforge/rapier3d-compat';
 import {
   Engine,
   Scene,
@@ -13,12 +12,16 @@ import {
   Mesh,
 } from '@babylonjs/core';
 import { NetworkedRapierPlugin } from '@rapierphysicsplugin/client';
+import { loadRapier, detectSIMDSupport, ComputeBackend } from '@rapierphysicsplugin/shared';
 
 const gravity = new Vector3(0, -9.81, 0);
 
 async function main() {
-  // 1. Init Rapier WASM
-  await RAPIER.init();
+  // 1. Init Rapier WASM — read backend preference from URL query param
+  const params = new URLSearchParams(window.location.search);
+  const backendParam = params.get('backend') as ComputeBackend | null;
+  const backend = backendParam ?? (detectSIMDSupport() ? ComputeBackend.WASM_SIMD : ComputeBackend.WASM_COMPAT);
+  const RAPIER = await loadRapier({ backend });
 
   // 2. BabylonJS engine & scene
   const canvas = document.getElementById('renderCanvas') as HTMLCanvasElement;

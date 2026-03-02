@@ -1,7 +1,8 @@
-import RAPIER from '@dimforge/rapier3d-compat';
+import { loadRapier, ComputeBackend } from '@rapierphysicsplugin/shared';
 import { PhysicsServer } from '@rapierphysicsplugin/server';
 
-await RAPIER.init();
+const backend = (process.env.PHYSICS_BACKEND as ComputeBackend) ?? ComputeBackend.WASM_SIMD;
+const RAPIER = await loadRapier({ backend });
 
 const server = new PhysicsServer(RAPIER);
 await server.start(8080);

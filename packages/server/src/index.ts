@@ -1,5 +1,4 @@
-import RAPIER from '@dimforge/rapier3d-compat';
-import { DEFAULT_PORT } from '@rapierphysicsplugin/shared';
+import { DEFAULT_PORT, ComputeBackend, loadRapier } from '@rapierphysicsplugin/shared';
 import { PhysicsServer } from './server.js';
 
 export { PhysicsServer } from './server.js';
@@ -11,8 +10,9 @@ export { StateManager } from './state-manager.js';
 export { InputBuffer } from './input-buffer.js';
 
 async function main(): Promise<void> {
-  console.log('Initializing Rapier WASM...');
-  await RAPIER.init();
+  const backend = (process.env.PHYSICS_BACKEND as ComputeBackend) ?? ComputeBackend.WASM_SIMD;
+  console.log(`Initializing Rapier WASM (${backend})...`);
+  const RAPIER = await loadRapier({ backend });
   console.log('Rapier initialized.');
 
   const port = parseInt(process.env.PORT || String(DEFAULT_PORT), 10);

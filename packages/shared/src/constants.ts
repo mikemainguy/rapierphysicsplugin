@@ -36,3 +36,14 @@ export const INTERPOLATION_BUFFER_SIZE = 3;
 
 /** Default server port */
 export const DEFAULT_PORT = 8080;
+
+/** Available compute backends for Rapier physics */
+export enum ComputeBackend {
+  WASM_COMPAT = 'wasm-compat',
+  WASM_SIMD = 'wasm-simd',
+}
+
+/** Configuration for the physics compute backend */
+export interface ComputeConfig {
+  backend: ComputeBackend;
+}
