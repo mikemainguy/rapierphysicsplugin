@@ -11,6 +11,9 @@ import {
   Quaternion,
   Mesh,
 } from '@babylonjs/core';
+import { SceneSerializer } from '@babylonjs/core/Misc/sceneSerializer';
+import { SceneLoader } from '@babylonjs/core/Loading/sceneLoader';
+import '@babylonjs/core/Loading/Plugins/babylonFileLoader';
 import { RapierPlugin, PhysicsSyncClient } from '@rapierphysicsplugin/client';
 import type { BodyDescriptor, BoxShapeParams, CapsuleShapeParams, RoomSnapshot, SphereShapeParams } from '@rapierphysicsplugin/shared';
 
@@ -29,6 +32,34 @@ const shapeColors: Record<string, Color3> = {
 
 // Static body color (ground gray)
 const staticColor = new Color3(0.4, 0.4, 0.45);
+
+async function deserializeMesh(
+  scene: Scene, meshData: object, bodyId: string,
+  position: { x: number; y: number; z: number },
+  rotation: { x: number; y: number; z: number; w: number },
+): Promise<Mesh> {
+  const json = JSON.stringify(meshData);
+  const result = await SceneLoader.ImportMeshAsync('', '', 'data:' + json, scene);
+  const mesh = result.meshes[0] as Mesh;
+  mesh.name = bodyId;
+  mesh.id = bodyId;
+  mesh.position.set(position.x, position.y, position.z);
+  mesh.rotationQuaternion = new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w);
+  mesh.metadata = { bodyId };
+  meshMap.set(bodyId, mesh);
+  return mesh;
+}
+
+function createAndSendBody(
+  scene: Scene, syncClient: PhysicsSyncClient, descriptor: BodyDescriptor,
+  meshCreator: (scene: Scene) => Mesh,
+) {
+  const mesh = meshCreator(scene);
+  mesh.metadata = { bodyId: descriptor.id };
+  meshMap.set(descriptor.id, mesh);
+  const meshData = SceneSerializer.SerializeMesh(mesh);
+  syncClient.addBody({ ...descriptor, meshData });
+}
 
 async function main() {
   // 1. Init Rapier WASM
@@ -83,7 +114,7 @@ async function main() {
   createMeshesFromSnapshot(scene, snapshot);
 
   // 6a. Auto-spawn ground plane (static box matching old server-side ground)
-  syncClient.addBody({
+  createAndSendBody(scene, syncClient, {
     id: 'ground',
     shape: { type: 'box', params: { halfExtents: { x: 10, y: 0.5, z: 10 } } },
     motionType: 'static',
@@ -91,6 +122,14 @@ async function main() {
     rotation: { x: 0, y: 0, z: 0, w: 1 },
     friction: 0.8,
     restitution: 0.3,
+  }, (s) => {
+    const m = MeshBuilder.CreateBox('ground', { width: 20, height: 1, depth: 20 }, s);
+    const mat = new StandardMaterial('groundMat', s);
+    mat.diffuseColor = staticColor;
+    mat.specularColor = new Color3(0.3, 0.3, 0.3);
+    m.material = mat;
+    m.position.set(0, -0.5, 0);
+    return m;
   });
 
   // 6b. Wire up Start/Reset button
@@ -113,7 +152,7 @@ async function main() {
     createMeshesFromSnapshot(scene, freshSnapshot);
 
     // Re-spawn ground after reset
-    syncClient.addBody({
+    createAndSendBody(scene, syncClient, {
       id: 'ground',
       shape: { type: 'box', params: { halfExtents: { x: 10, y: 0.5, z: 10 } } },
       motionType: 'static',
@@ -121,6 +160,14 @@ async function main() {
       rotation: { x: 0, y: 0, z: 0, w: 1 },
       friction: 0.8,
       restitution: 0.3,
+    }, (s) => {
+      const m = MeshBuilder.CreateBox('ground', { width: 20, height: 1, depth: 20 }, s);
+      const mat = new StandardMaterial('groundMat', s);
+      mat.diffuseColor = staticColor;
+      mat.specularColor = new Color3(0.3, 0.3, 0.3);
+      m.material = mat;
+      m.position.set(0, -0.5, 0);
+      return m;
     });
 
     simButton.textContent = 'Reset';
@@ -128,7 +175,11 @@ async function main() {
 
   // 6c. Wire up onBodyAdded to create meshes for bodies added by any client
   syncClient.onBodyAdded((descriptor) => {
-    if (!meshMap.has(descriptor.id)) {
+    if (meshMap.has(descriptor.id)) return;
+    if (descriptor.meshData) {
+      deserializeMesh(scene, descriptor.meshData, descriptor.id,
+        descriptor.position, descriptor.rotation);
+    } else {
       createMeshFromDescriptor(scene, descriptor);
     }
   });
@@ -158,39 +209,54 @@ async function main() {
     const identityRot = { x: 0, y: 0, z: 0, w: 1 };
 
     for (let i = 0; i < numBoxes; i++) {
-      syncClient.addBody({
-        id: `box-${ts}-${i}`,
-        shape: { type: 'box', params: { halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } },
-        motionType: 'dynamic',
-        position: randomPos(),
-        rotation: identityRot,
-        mass: 1,
-        friction: 0.5,
-        restitution: 0.3,
+      const id = `box-${ts}-${i}`;
+      const pos = randomPos();
+      createAndSendBody(scene, syncClient, {
+        id, shape: { type: 'box', params: { halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } },
+        motionType: 'dynamic', position: pos, rotation: identityRot,
+        mass: 1, friction: 0.5, restitution: 0.3,
+      }, (s) => {
+        const m = MeshBuilder.CreateBox(id, { width: 1, height: 1, depth: 1 }, s);
+        const mat = new StandardMaterial(`${id}Mat`, s);
+        mat.diffuseColor = shapeColors.box;
+        mat.specularColor = new Color3(0.3, 0.3, 0.3);
+        m.material = mat;
+        m.position.set(pos.x, pos.y, pos.z);
+        return m;
       });
     }
     for (let i = 0; i < numSpheres; i++) {
-      syncClient.addBody({
-        id: `sphere-${ts}-${i}`,
-        shape: { type: 'sphere', params: { radius: 0.5 } },
-        motionType: 'dynamic',
-        position: randomPos(),
-        rotation: identityRot,
-        mass: 1,
-        friction: 0.5,
-        restitution: 0.3,
+      const id = `sphere-${ts}-${i}`;
+      const pos = randomPos();
+      createAndSendBody(scene, syncClient, {
+        id, shape: { type: 'sphere', params: { radius: 0.5 } },
+        motionType: 'dynamic', position: pos, rotation: identityRot,
+        mass: 1, friction: 0.5, restitution: 0.3,
+      }, (s) => {
+        const m = MeshBuilder.CreateSphere(id, { diameter: 1 }, s);
+        const mat = new StandardMaterial(`${id}Mat`, s);
+        mat.diffuseColor = shapeColors.sphere;
+        mat.specularColor = new Color3(0.3, 0.3, 0.3);
+        m.material = mat;
+        m.position.set(pos.x, pos.y, pos.z);
+        return m;
       });
     }
     for (let i = 0; i < numCapsules; i++) {
-      syncClient.addBody({
-        id: `capsule-${ts}-${i}`,
-        shape: { type: 'capsule', params: { halfHeight: 0.5, radius: 0.3 } },
-        motionType: 'dynamic',
-        position: randomPos(),
-        rotation: identityRot,
-        mass: 1,
-        friction: 0.5,
-        restitution: 0.3,
+      const id = `capsule-${ts}-${i}`;
+      const pos = randomPos();
+      createAndSendBody(scene, syncClient, {
+        id, shape: { type: 'capsule', params: { halfHeight: 0.5, radius: 0.3 } },
+        motionType: 'dynamic', position: pos, rotation: identityRot,
+        mass: 1, friction: 0.5, restitution: 0.3,
+      }, (s) => {
+        const m = MeshBuilder.CreateCapsule(id, { height: 1.6, radius: 0.3 }, s);
+        const mat = new StandardMaterial(`${id}Mat`, s);
+        mat.diffuseColor = shapeColors.capsule;
+        mat.specularColor = new Color3(0.3, 0.3, 0.3);
+        m.material = mat;
+        m.position.set(pos.x, pos.y, pos.z);
+        return m;
       });
     }
   });

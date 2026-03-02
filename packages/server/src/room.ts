@@ -28,6 +28,7 @@ export class Room {
   private initialBodies: BodyDescriptor[] = [];
   private initialConstraints: ConstraintDescriptor[] = [];
   private activeConstraints: Map<string, ConstraintDescriptor> = new Map();
+  private activeBodies: Map<string, BodyDescriptor> = new Map();
   private currentTick = 0;
   private ticksSinceLastBroadcast = 0;
   private pendingCollisionEvents: CollisionEventData[] = [];
@@ -43,6 +44,9 @@ export class Room {
     this.initialBodies = bodies;
     this.initialConstraints = constraints ?? [];
     this.physicsWorld.loadState(bodies);
+    for (const b of bodies) {
+      this.activeBodies.set(b.id, b);
+    }
     for (const c of this.initialConstraints) {
       this.physicsWorld.addConstraint(c);
       this.activeConstraints.set(c.id, c);
@@ -57,6 +61,7 @@ export class Room {
     // Send full state snapshot to the joining client, including body ID mapping and constraints
     const snapshot = this.stateManager.createSnapshot(this.physicsWorld, this.currentTick);
     const constraints = Array.from(this.activeConstraints.values());
+    const bodies = Array.from(this.activeBodies.values());
     conn.send(encodeMessage({
       type: MessageType.ROOM_JOINED,
       roomId: this.id,
@@ -65,6 +70,7 @@ export class Room {
       simulationRunning: this.simulationLoop.isRunning,
       bodyIdMap: this.stateManager.getIdToIndexRecord(),
       constraints: constraints.length > 0 ? constraints : undefined,
+      bodies: bodies.length > 0 ? bodies : undefined,
     }));
   }
 
@@ -82,6 +88,7 @@ export class Room {
   addBody(descriptor: BodyDescriptor): string {
     const id = this.physicsWorld.addBody(descriptor);
     const bodyIndex = this.stateManager.ensureBodyIndex(id);
+    this.activeBodies.set(id, descriptor);
 
     // Notify all clients (include the numeric index for the new body)
     this.broadcast(encodeMessage({
@@ -96,6 +103,7 @@ export class Room {
   removeBody(bodyId: string): void {
     this.physicsWorld.removeBody(bodyId);
     this.stateManager.removeBody(bodyId);
+    this.activeBodies.delete(bodyId);
 
     // Notify all clients
     this.broadcast(encodeMessage({
@@ -220,23 +228,29 @@ export class Room {
       buffer.clear();
     }
 
-    // Reset active constraints to initial set
+    // Reset active constraints and bodies to initial set
     this.activeConstraints.clear();
     for (const c of this.initialConstraints) {
       this.activeConstraints.set(c.id, c);
+    }
+    this.activeBodies.clear();
+    for (const b of this.initialBodies) {
+      this.activeBodies.set(b.id, b);
     }
 
     // Start simulation loop
     this.simulationLoop.start();
 
-    // Broadcast fresh snapshot to all clients (includes updated body ID mapping and constraints)
+    // Broadcast fresh snapshot to all clients (includes updated body ID mapping, constraints, and bodies)
     const snapshot = this.stateManager.createSnapshot(this.physicsWorld, this.currentTick);
     const constraints = Array.from(this.activeConstraints.values());
+    const bodies = Array.from(this.activeBodies.values());
     this.broadcast(encodeMessage({
       type: MessageType.SIMULATION_STARTED,
       snapshot,
       bodyIdMap: this.stateManager.getIdToIndexRecord(),
       constraints: constraints.length > 0 ? constraints : undefined,
+      bodies: bodies.length > 0 ? bodies : undefined,
     }));
   }
 
@@ -261,6 +275,7 @@ export class Room {
     this.inputBuffers.clear();
     this.pendingCollisionEvents = [];
     this.activeConstraints.clear();
+    this.activeBodies.clear();
     this.stateManager.clear();
     this.physicsWorld.destroy();
   }

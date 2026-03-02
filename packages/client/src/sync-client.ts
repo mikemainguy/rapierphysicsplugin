@@ -351,6 +351,18 @@ export class PhysicsSyncClient {
           }
         }
 
+        // Replay body descriptors for late joiners
+        if (message.bodies) {
+          for (const b of message.bodies) {
+            if (message.bodyIdMap && message.bodyIdMap[b.id] !== undefined) {
+              this.addBodyIdMapping(b.id, message.bodyIdMap[b.id]);
+            }
+            for (const cb of this.bodyAddedCallbacks) {
+              cb(b);
+            }
+          }
+        }
+
         this.joinResolve?.(message.snapshot);
         this.joinResolve = null;
         break;
@@ -411,6 +423,16 @@ export class PhysicsSyncClient {
           for (const c of simConstraints) {
             for (const cb of this.constraintAddedCallbacks) {
               cb(c);
+            }
+          }
+        }
+
+        // Replay body descriptors included in reset
+        const simBodies = (message as ServerMessage & { bodies?: BodyDescriptor[] }).bodies;
+        if (simBodies) {
+          for (const b of simBodies) {
+            for (const cb of this.bodyAddedCallbacks) {
+              cb(b);
             }
           }
         }

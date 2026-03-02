@@ -105,6 +105,7 @@ export interface RoomJoinedMessage {
   simulationRunning: boolean;
   bodyIdMap?: Record<string, number>;
   constraints?: ConstraintDescriptor[];
+  bodies?: BodyDescriptor[];
 }
 
 export interface RoomStateMessage {
@@ -125,6 +126,7 @@ export interface SimulationStartedMessage {
   snapshot: RoomSnapshot;
   bodyIdMap?: Record<string, number>;
   constraints?: ConstraintDescriptor[];
+  bodies?: BodyDescriptor[];
 }
 
 export interface CollisionEventsMessage {
