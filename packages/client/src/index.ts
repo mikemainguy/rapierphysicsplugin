@@ -1,5 +1,7 @@
 export { PhysicsSyncClient } from './sync-client.js';
 export { RapierPlugin } from './rapier-plugin.js';
+export { NetworkedRapierPlugin } from './networked-rapier-plugin.js';
+export type { NetworkedRapierPluginConfig } from './networked-rapier-plugin.js';
 export { ClockSyncClient } from './clock-sync.js';
 export { StateReconciler, needsCorrection, blendBodyState } from './state-reconciler.js';
 export { Interpolator } from './interpolator.js';

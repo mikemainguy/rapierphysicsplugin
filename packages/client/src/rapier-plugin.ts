@@ -53,12 +53,12 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
   public onCollisionEndedObservable = new Observable<IBasePhysicsCollisionEvent>();
   public onTriggerCollisionObservable = new Observable<IBasePhysicsCollisionEvent>();
 
-  private rapier: typeof RAPIER;
-  private bodyToRigidBody = new Map<PhysicsBody, RAPIER.RigidBody>();
+  protected rapier: typeof RAPIER;
+  protected bodyToRigidBody = new Map<PhysicsBody, RAPIER.RigidBody>();
   private bodyToColliders = new Map<PhysicsBody, RAPIER.Collider[]>();
   private shapeToColliderDesc = new Map<PhysicsShape, RAPIER.ColliderDesc>();
-  private shapeTypeMap = new Map<PhysicsShape, PhysicsShapeType>();
-  private shapeMaterialMap = new Map<PhysicsShape, PhysicsMaterial>();
+  protected shapeTypeMap = new Map<PhysicsShape, PhysicsShapeType>();
+  protected shapeMaterialMap = new Map<PhysicsShape, PhysicsMaterial>();
   private shapeDensityMap = new Map<PhysicsShape, number>();
   private shapeFilterMembership = new Map<PhysicsShape, number>();
   private shapeFilterCollide = new Map<PhysicsShape, number>();
@@ -81,7 +81,7 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
   private shapeToBody = new Map<PhysicsShape, PhysicsBody>();
   private compoundChildren = new Map<PhysicsShape, Array<{ child: PhysicsShape; translation?: Vector3; rotation?: Quaternion; scale?: Vector3 }>>();
   private bodyEventMask = new Map<PhysicsBody, number>();
-  private eventQueue!: RAPIER.EventQueue;
+  protected eventQueue!: RAPIER.EventQueue;
   private colliderHandleToBody = new Map<number, PhysicsBody>();
 
   constructor(rapier: typeof RAPIER, gravity?: Vector3) {

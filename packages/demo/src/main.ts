@@ -8,58 +8,13 @@ import {
   MeshBuilder,
   StandardMaterial,
   Color3,
-  Quaternion,
+  PhysicsAggregate,
+  PhysicsShapeType,
   Mesh,
 } from '@babylonjs/core';
-import { SceneSerializer } from '@babylonjs/core/Misc/sceneSerializer';
-import { SceneLoader } from '@babylonjs/core/Loading/sceneLoader';
-import '@babylonjs/core/Loading/Plugins/babylonFileLoader';
-import { RapierPlugin, PhysicsSyncClient } from '@rapierphysicsplugin/client';
-import type { BodyDescriptor, BoxShapeParams, CapsuleShapeParams, RoomSnapshot, SphereShapeParams } from '@rapierphysicsplugin/shared';
+import { NetworkedRapierPlugin } from '@rapierphysicsplugin/client';
 
-// Body ID → BabylonJS mesh
-const meshMap = new Map<string, Mesh>();
-
-// Collision event counter
-let collisionCount = 0;
-
-// Colors for different shape types
-const shapeColors: Record<string, Color3> = {
-  box: new Color3(0.9, 0.2, 0.2),
-  sphere: new Color3(0.2, 0.7, 0.9),
-  capsule: new Color3(0.2, 0.9, 0.3),
-};
-
-// Static body color (ground gray)
-const staticColor = new Color3(0.4, 0.4, 0.45);
-
-async function deserializeMesh(
-  scene: Scene, meshData: object, bodyId: string,
-  position: { x: number; y: number; z: number },
-  rotation: { x: number; y: number; z: number; w: number },
-): Promise<Mesh> {
-  const json = JSON.stringify(meshData);
-  const result = await SceneLoader.ImportMeshAsync('', '', 'data:' + json, scene);
-  const mesh = result.meshes[0] as Mesh;
-  mesh.name = bodyId;
-  mesh.id = bodyId;
-  mesh.position.set(position.x, position.y, position.z);
-  mesh.rotationQuaternion = new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w);
-  mesh.metadata = { bodyId };
-  meshMap.set(bodyId, mesh);
-  return mesh;
-}
-
-function createAndSendBody(
-  scene: Scene, syncClient: PhysicsSyncClient, descriptor: BodyDescriptor,
-  meshCreator: (scene: Scene) => Mesh,
-) {
-  const mesh = meshCreator(scene);
-  mesh.metadata = { bodyId: descriptor.id };
-  meshMap.set(descriptor.id, mesh);
-  const meshData = SceneSerializer.SerializeMesh(mesh);
-  syncClient.addBody({ ...descriptor, meshData });
-}
+const gravity = new Vector3(0, -9.81, 0);
 
 async function main() {
   // 1. Init Rapier WASM
@@ -80,116 +35,52 @@ async function main() {
   const light = new HemisphericLight('light', new Vector3(0, 1, 0), scene);
   light.intensity = 0.9;
 
-  // 3. Rapier physics plugin (local — used for BabylonJS physics API compatibility)
-  const plugin = new RapierPlugin(RAPIER, new Vector3(0, -9.81, 0));
-  scene.enablePhysics(new Vector3(0, -9.81, 0), plugin);
+  // 3. Create NetworkedRapierPlugin and connect
+  const plugin = new NetworkedRapierPlugin(RAPIER, gravity, {
+    serverUrl: 'wss://rapier-server.flatearthdefense.com',
+    roomId: 'demo',
+  });
 
-  // 4. Connect to server
-  const syncClient = new PhysicsSyncClient();
   const debugEl = document.getElementById('debug')!;
 
   try {
-    await syncClient.connect('wss://rapier-server.flatearthdefense.com');
-    debugEl.textContent = 'Connected. Joining room...';
+    debugEl.textContent = 'Connecting...';
+    scene.enablePhysics(gravity, plugin);
+    await plugin.connect(scene);
+    debugEl.textContent = 'Connected.';
   } catch {
-    debugEl.textContent = 'Failed to connect to wss://rapier-server.flatearthdefense.com';
+    debugEl.textContent = 'Failed to connect to server';
     engine.runRenderLoop(() => scene.render());
     window.addEventListener('resize', () => engine.resize());
     return;
   }
 
-  // 5. Join room and get snapshot
-  let snapshot: RoomSnapshot;
-  try {
-    snapshot = await syncClient.joinRoom('demo');
-    debugEl.textContent = `Joined room. Bodies: ${snapshot.bodies.length}`;
-  } catch {
-    debugEl.textContent = 'Failed to join room "demo"';
-    engine.runRenderLoop(() => scene.render());
-    window.addEventListener('resize', () => engine.resize());
-    return;
-  }
-
-  // 6. Create meshes from snapshot
-  createMeshesFromSnapshot(scene, snapshot);
-
-  // 6a. Auto-spawn ground plane (static box matching old server-side ground)
-  createAndSendBody(scene, syncClient, {
-    id: 'ground',
-    shape: { type: 'box', params: { halfExtents: { x: 10, y: 0.5, z: 10 } } },
-    motionType: 'static',
-    position: { x: 0, y: -0.5, z: 0 },
-    rotation: { x: 0, y: 0, z: 0, w: 1 },
-    friction: 0.8,
-    restitution: 0.3,
-  }, (s) => {
-    const m = MeshBuilder.CreateBox('ground', { width: 20, height: 1, depth: 20 }, s);
-    const mat = new StandardMaterial('groundMat', s);
-    mat.diffuseColor = staticColor;
+  // 4. Create ground plane — standard BabylonJS physics, plugin handles networking
+  function createGround() {
+    const ground = MeshBuilder.CreateBox('ground', { width: 20, height: 1, depth: 20 }, scene);
+    const mat = new StandardMaterial('groundMat', scene);
+    mat.diffuseColor = new Color3(0.4, 0.4, 0.45);
     mat.specularColor = new Color3(0.3, 0.3, 0.3);
-    m.material = mat;
-    m.position.set(0, -0.5, 0);
-    return m;
-  });
+    ground.material = mat;
+    ground.position.set(0, -0.5, 0);
+    new PhysicsAggregate(ground, PhysicsShapeType.BOX, { mass: 0, friction: 0.8, restitution: 0.3 }, scene);
+  }
+  createGround();
 
-  // 6b. Wire up Start/Reset button
+  // 5. Start/Reset button
   const simButton = document.getElementById('simButton') as HTMLButtonElement;
-  simButton.textContent = syncClient.simulationRunning ? 'Reset' : 'Start';
+  simButton.textContent = plugin.simulationRunning ? 'Reset' : 'Start';
 
   simButton.addEventListener('click', () => {
-    syncClient.startSimulation();
+    plugin.startSimulation();
   });
 
-  syncClient.onSimulationStarted((freshSnapshot) => {
-    // Dispose all existing meshes
-    for (const [, mesh] of meshMap) {
-      mesh.dispose();
-    }
-    meshMap.clear();
-    collisionCount = 0;
-
-    // Recreate from fresh snapshot
-    createMeshesFromSnapshot(scene, freshSnapshot);
-
-    // Re-spawn ground after reset
-    createAndSendBody(scene, syncClient, {
-      id: 'ground',
-      shape: { type: 'box', params: { halfExtents: { x: 10, y: 0.5, z: 10 } } },
-      motionType: 'static',
-      position: { x: 0, y: -0.5, z: 0 },
-      rotation: { x: 0, y: 0, z: 0, w: 1 },
-      friction: 0.8,
-      restitution: 0.3,
-    }, (s) => {
-      const m = MeshBuilder.CreateBox('ground', { width: 20, height: 1, depth: 20 }, s);
-      const mat = new StandardMaterial('groundMat', s);
-      mat.diffuseColor = staticColor;
-      mat.specularColor = new Color3(0.3, 0.3, 0.3);
-      m.material = mat;
-      m.position.set(0, -0.5, 0);
-      return m;
-    });
-
+  plugin.onSimulationReset(() => {
+    createGround();
     simButton.textContent = 'Reset';
   });
 
-  // 6c. Wire up onBodyAdded to create meshes for bodies added by any client
-  syncClient.onBodyAdded((descriptor) => {
-    if (meshMap.has(descriptor.id)) return;
-    if (descriptor.meshData) {
-      deserializeMesh(scene, descriptor.meshData, descriptor.id,
-        descriptor.position, descriptor.rotation);
-    } else {
-      createMeshFromDescriptor(scene, descriptor);
-    }
-  });
-
-  // 6d. Wire up collision events
-  syncClient.onCollisionEvents((events) => {
-    collisionCount += events.length;
-  });
-
-  // 6e. Wire up Spawn button
+  // 6. Spawn button — create meshes + PhysicsAggregates (plugin auto-sends to server)
   const spawnButton = document.getElementById('spawnButton') as HTMLButtonElement;
   const spawnBoxesInput = document.getElementById('spawnBoxes') as HTMLInputElement;
   const spawnSpheresInput = document.getElementById('spawnSpheres') as HTMLInputElement;
@@ -201,133 +92,91 @@ async function main() {
     const numSpheres = Math.max(0, parseInt(spawnSpheresInput.value) || 0);
     const numCapsules = Math.max(0, parseInt(spawnCapsulesInput.value) || 0);
 
-    const randomPos = () => ({
-      x: Math.random() * 10 - 5,
-      y: Math.random() * 10 + 5,
-      z: Math.random() * 10 - 5,
-    });
-    const identityRot = { x: 0, y: 0, z: 0, w: 1 };
+    const randomPos = () => new Vector3(
+      Math.random() * 10 - 5,
+      Math.random() * 10 + 5,
+      Math.random() * 10 - 5,
+    );
 
     for (let i = 0; i < numBoxes; i++) {
       const id = `box-${ts}-${i}`;
-      const pos = randomPos();
-      createAndSendBody(scene, syncClient, {
-        id, shape: { type: 'box', params: { halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } },
-        motionType: 'dynamic', position: pos, rotation: identityRot,
-        mass: 1, friction: 0.5, restitution: 0.3,
-      }, (s) => {
-        const m = MeshBuilder.CreateBox(id, { width: 1, height: 1, depth: 1 }, s);
-        const mat = new StandardMaterial(`${id}Mat`, s);
-        mat.diffuseColor = shapeColors.box;
-        mat.specularColor = new Color3(0.3, 0.3, 0.3);
-        m.material = mat;
-        m.position.set(pos.x, pos.y, pos.z);
-        return m;
-      });
+      const mesh = MeshBuilder.CreateBox(id, { width: 1, height: 1, depth: 1 }, scene);
+      const mat = new StandardMaterial(`${id}Mat`, scene);
+      mat.diffuseColor = new Color3(0.9, 0.2, 0.2);
+      mat.specularColor = new Color3(0.3, 0.3, 0.3);
+      mesh.material = mat;
+      mesh.position = randomPos();
+      new PhysicsAggregate(mesh, PhysicsShapeType.BOX, { mass: 1, friction: 0.5, restitution: 0.3 }, scene);
     }
+
     for (let i = 0; i < numSpheres; i++) {
       const id = `sphere-${ts}-${i}`;
-      const pos = randomPos();
-      createAndSendBody(scene, syncClient, {
-        id, shape: { type: 'sphere', params: { radius: 0.5 } },
-        motionType: 'dynamic', position: pos, rotation: identityRot,
-        mass: 1, friction: 0.5, restitution: 0.3,
-      }, (s) => {
-        const m = MeshBuilder.CreateSphere(id, { diameter: 1 }, s);
-        const mat = new StandardMaterial(`${id}Mat`, s);
-        mat.diffuseColor = shapeColors.sphere;
-        mat.specularColor = new Color3(0.3, 0.3, 0.3);
-        m.material = mat;
-        m.position.set(pos.x, pos.y, pos.z);
-        return m;
-      });
+      const mesh = MeshBuilder.CreateSphere(id, { diameter: 1 }, scene);
+      const mat = new StandardMaterial(`${id}Mat`, scene);
+      mat.diffuseColor = new Color3(0.2, 0.7, 0.9);
+      mat.specularColor = new Color3(0.3, 0.3, 0.3);
+      mesh.material = mat;
+      mesh.position = randomPos();
+      new PhysicsAggregate(mesh, PhysicsShapeType.SPHERE, { mass: 1, friction: 0.5, restitution: 0.3 }, scene);
     }
+
     for (let i = 0; i < numCapsules; i++) {
       const id = `capsule-${ts}-${i}`;
-      const pos = randomPos();
-      createAndSendBody(scene, syncClient, {
-        id, shape: { type: 'capsule', params: { halfHeight: 0.5, radius: 0.3 } },
-        motionType: 'dynamic', position: pos, rotation: identityRot,
+      const mesh = MeshBuilder.CreateCapsule(id, { height: 1.6, radius: 0.3 }, scene);
+      const mat = new StandardMaterial(`${id}Mat`, scene);
+      mat.diffuseColor = new Color3(0.2, 0.9, 0.3);
+      mat.specularColor = new Color3(0.3, 0.3, 0.3);
+      mesh.material = mat;
+      mesh.position = randomPos();
+      new PhysicsAggregate(mesh, PhysicsShapeType.CAPSULE, {
         mass: 1, friction: 0.5, restitution: 0.3,
-      }, (s) => {
-        const m = MeshBuilder.CreateCapsule(id, { height: 1.6, radius: 0.3 }, s);
-        const mat = new StandardMaterial(`${id}Mat`, s);
-        mat.diffuseColor = shapeColors.capsule;
-        mat.specularColor = new Color3(0.3, 0.3, 0.3);
-        m.material = mat;
-        m.position.set(pos.x, pos.y, pos.z);
-        return m;
-      });
+        pointA: new Vector3(0, -0.5, 0),
+        pointB: new Vector3(0, 0.5, 0),
+        radius: 0.3,
+      }, scene);
     }
   });
 
-  // 7. Listen for state updates (feed interpolator + bookkeeping only, no mesh updates)
-  let lastTick = 0;
-  let lastDeltaCount = 0;
-  syncClient.onStateUpdate((state: RoomSnapshot) => {
-    lastTick = state.tick;
-    lastDeltaCount = state.bodies.length;
-  });
-
-  // 8. Click to apply impulse (works on any dynamic body)
+  // 7. Click to apply impulse
   scene.onPointerDown = (_evt, pickResult) => {
     if (pickResult?.hit && pickResult.pickedMesh) {
       const mesh = pickResult.pickedMesh as Mesh;
       const bodyId = mesh.metadata?.bodyId as string | undefined;
       if (bodyId && bodyId !== 'ground') {
         const point = pickResult.pickedPoint;
-        syncClient.sendInput([
-          {
-            type: 'applyImpulse',
-            bodyId,
-            data: {
-              impulse: { x: 0, y: 8, z: 0 },
-              point: point ? { x: point.x, y: point.y, z: point.z } : undefined,
-            },
+        plugin.sendInput([{
+          type: 'applyImpulse',
+          bodyId,
+          data: {
+            impulse: { x: 0, y: 8, z: 0 },
+            point: point ? { x: point.x, y: point.y, z: point.z } : undefined,
           },
-        ]);
+        }]);
       }
     }
   };
 
-  // 9. Render loop — query interpolator at 60Hz for smooth mesh updates
-  const reconciler = syncClient.getReconciler();
+  // 8. State update tracking for debug overlay
+  let lastTick = 0;
+  let lastDeltaCount = 0;
+  plugin.onStateUpdate((state) => {
+    lastTick = state.tick;
+    lastDeltaCount = state.bodies.length;
+  });
+
+  // 9. Render loop — just scene.render() + debug overlay
+  const reconciler = plugin.getReconciler();
   const interpolator = reconciler.getInterpolator();
-  const clockSync = syncClient.getClockSync();
+  const clockSync = plugin.getClockSync();
 
   engine.runRenderLoop(() => {
-    const serverTime = clockSync.getServerTime();
-
-    // Reset per-frame stats before querying
-    interpolator.resetStats();
-
-    // Update meshes from interpolator
-    for (const [bodyId, mesh] of meshMap) {
-      const interpolated = reconciler.getInterpolatedRemoteState(bodyId, serverTime);
-      if (interpolated) {
-        mesh.position.set(interpolated.position.x, interpolated.position.y, interpolated.position.z);
-        if (!mesh.rotationQuaternion) {
-          mesh.rotationQuaternion = new Quaternion();
-        }
-        mesh.rotationQuaternion.set(
-          interpolated.rotation.x,
-          interpolated.rotation.y,
-          interpolated.rotation.z,
-          interpolated.rotation.w,
-        );
-      }
-      // If null (e.g. static body with no updates), mesh keeps its initial position
-    }
-
     scene.render();
 
-    // Update debug overlay with interpolation diagnostics
+    // Update debug overlay
     const stats = interpolator.getStats();
     const rtt = clockSync.getRTT();
     const offset = clockSync.getClockOffset();
     const fps = engine.getFps();
-    const sent = syncClient.bytesSent;
-    const recv = syncClient.bytesReceived;
 
     let sampleInfo = '';
     if (stats.sampleBodyId) {
@@ -342,83 +191,17 @@ async function main() {
       `Tick: ${lastTick}\n` +
       `RTT: ${rtt.toFixed(1)} ms\n` +
       `Clock offset: ${offset.toFixed(1)} ms\n` +
-      `Bodies: ${syncClient.totalBodyCount} (delta: ${lastDeltaCount})\n` +
+      `Bodies: ${plugin.totalBodyCount} (delta: ${lastDeltaCount})\n` +
       `Interp: ${stats.interpolatedCount} extrap: ${stats.extrapolatedCount} stale: ${stats.staleCount} empty: ${stats.emptyCount}\n` +
       `RenderDelay: ${stats.renderDelay.toFixed(0)} ms\n` +
       `${sampleInfo}\n` +
-      `WS sent: ${formatBytes(sent)}\n` +
-      `WS recv: ${formatBytes(recv)}\n` +
-      `Collisions: ${collisionCount}\n` +
-      `Client: ${syncClient.getClientId() ?? '?'}`;
+      `WS sent: ${formatBytes(plugin.bytesSent)}\n` +
+      `WS recv: ${formatBytes(plugin.bytesReceived)}\n` +
+      `Collisions: ${plugin.collisionEventCount}\n` +
+      `Client: ${plugin.getClientId() ?? '?'}`;
   });
 
-  window.addEventListener('resize', () => {
-    engine.resize();
-  });
-}
-
-function createMeshesFromSnapshot(_scene: Scene, _snapshot: RoomSnapshot) {
-  // Snapshot only contains BodyState (position/rotation/velocity), not shape descriptors.
-  // Meshes are created via onBodyAdded when BODY_ADDED messages arrive from the server.
-}
-
-function createMeshFromDescriptor(scene: Scene, descriptor: BodyDescriptor): Mesh {
-  let mesh: Mesh;
-  let colorKey: string;
-
-  switch (descriptor.shape.type) {
-    case 'box': {
-      const p = descriptor.shape.params as BoxShapeParams;
-      mesh = MeshBuilder.CreateBox(descriptor.id, {
-        width: p.halfExtents.x * 2,
-        height: p.halfExtents.y * 2,
-        depth: p.halfExtents.z * 2,
-      }, scene);
-      colorKey = 'box';
-      break;
-    }
-    case 'sphere': {
-      const p = descriptor.shape.params as SphereShapeParams;
-      mesh = MeshBuilder.CreateSphere(descriptor.id, { diameter: p.radius * 2 }, scene);
-      colorKey = 'sphere';
-      break;
-    }
-    case 'capsule': {
-      const p = descriptor.shape.params as CapsuleShapeParams;
-      mesh = MeshBuilder.CreateCapsule(descriptor.id, {
-        height: p.halfHeight * 2 + p.radius * 2,
-        radius: p.radius,
-      }, scene);
-      colorKey = 'capsule';
-      break;
-    }
-    default:
-      // Fallback for mesh shape type or unknown — render as unit box
-      mesh = MeshBuilder.CreateBox(descriptor.id, { size: 1 }, scene);
-      colorKey = 'box';
-  }
-
-  mesh.position.set(descriptor.position.x, descriptor.position.y, descriptor.position.z);
-  mesh.rotationQuaternion = new Quaternion(
-    descriptor.rotation.x,
-    descriptor.rotation.y,
-    descriptor.rotation.z,
-    descriptor.rotation.w,
-  );
-  mesh.metadata = { bodyId: descriptor.id };
-
-  const mat = new StandardMaterial(`${descriptor.id}Mat`, scene);
-  // Use ground gray for static bodies, shape color for dynamic
-  if (descriptor.motionType === 'static') {
-    mat.diffuseColor = staticColor;
-  } else {
-    mat.diffuseColor = shapeColors[colorKey] ?? new Color3(0.5, 0.5, 0.5);
-  }
-  mat.specularColor = new Color3(0.3, 0.3, 0.3);
-  mesh.material = mat;
-
-  meshMap.set(descriptor.id, mesh);
-  return mesh;
+  window.addEventListener('resize', () => engine.resize());
 }
 
 function formatBytes(bytes: number): string {
