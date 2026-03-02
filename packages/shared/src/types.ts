@@ -66,7 +66,6 @@ export interface BodyDescriptor {
   restitution?: number;
   friction?: number;
   isTrigger?: boolean;
-  meshData?: object;  // Serialized .babylon mesh JSON (opaque to server)
 }
 
 export type CollisionEventType =

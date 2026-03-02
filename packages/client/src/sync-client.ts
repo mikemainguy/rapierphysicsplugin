@@ -17,7 +17,10 @@ import {
   FIELD_ROTATION,
   FIELD_LIN_VEL,
   FIELD_ANG_VEL,
+  OPCODE_MESH_BINARY,
+  decodeMeshBinary,
 } from '@rapierphysicsplugin/shared';
+import type { MeshBinaryMessage } from '@rapierphysicsplugin/shared';
 import { ClockSyncClient } from './clock-sync.js';
 import { StateReconciler } from './state-reconciler.js';
 import { Interpolator } from './interpolator.js';
@@ -30,6 +33,7 @@ type SimulationStartedCallback = (snapshot: RoomSnapshot) => void;
 type CollisionEventsCallback = (events: CollisionEventData[]) => void;
 type ConstraintAddedCallback = (constraint: ConstraintDescriptor) => void;
 type ConstraintRemovedCallback = (constraintId: string) => void;
+type MeshBinaryCallback = (msg: MeshBinaryMessage) => void;
 
 export class PhysicsSyncClient {
   private ws: WebSocket | null = null;
@@ -56,6 +60,7 @@ export class PhysicsSyncClient {
   private collisionEventsCallbacks: CollisionEventsCallback[] = [];
   private constraintAddedCallbacks: ConstraintAddedCallback[] = [];
   private constraintRemovedCallbacks: ConstraintRemovedCallback[] = [];
+  private meshBinaryCallbacks: MeshBinaryCallback[] = [];
 
   private connectResolve: (() => void) | null = null;
   private connectReject: ((err: Error) => void) | null = null;
@@ -99,6 +104,15 @@ export class PhysicsSyncClient {
         }
         this._bytesReceived += buf.byteLength;
         try {
+          // Intercept mesh binary messages directly — skip normal decode path
+          if (buf[0] === OPCODE_MESH_BINARY) {
+            const decoded = decodeMeshBinary(buf);
+            const msg: MeshBinaryMessage = { type: MessageType.MESH_BINARY, ...decoded };
+            for (const cb of this.meshBinaryCallbacks) {
+              cb(msg);
+            }
+            return;
+          }
           const message = decodeServerMessage(buf, this.indexToId);
           this.handleMessage(message);
         } catch (err) {
@@ -228,6 +242,18 @@ export class PhysicsSyncClient {
 
   onConstraintRemoved(callback: ConstraintRemovedCallback): void {
     this.constraintRemovedCallbacks.push(callback);
+  }
+
+  onMeshBinary(callback: MeshBinaryCallback): void {
+    this.meshBinaryCallbacks.push(callback);
+  }
+
+  /** Send pre-encoded binary mesh data directly over the WebSocket (no msgpackr wrapping). */
+  sendMeshBinary(encoded: Uint8Array): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this._bytesSent += encoded.byteLength;
+      this.ws.send(encoded);
+    }
   }
 
   startSimulation(): void {

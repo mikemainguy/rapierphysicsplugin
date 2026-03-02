@@ -9,15 +9,14 @@ import {
   PhysicsShapeType,
   PhysicsBody,
   PhysicsShape,
+  VertexData,
+  Mesh,
 } from '@babylonjs/core';
 import type {
   PhysicsShapeParameters,
   PhysicsMaterial,
 } from '@babylonjs/core';
-import type { Mesh, Scene, Nullable } from '@babylonjs/core';
-import { SceneSerializer } from '@babylonjs/core/Misc/sceneSerializer';
-import { SceneLoader } from '@babylonjs/core/Loading/sceneLoader';
-import '@babylonjs/core/Loading/Plugins/babylonFileLoader';
+import type { Scene, Nullable } from '@babylonjs/core';
 import type {
   BodyDescriptor,
   ShapeDescriptor,
@@ -28,7 +27,9 @@ import type {
   CollisionEventData,
   RoomSnapshot,
   MotionType,
+  MeshBinaryMessage,
 } from '@rapierphysicsplugin/shared';
+import { encodeMeshBinary } from '@rapierphysicsplugin/shared';
 import { RapierPlugin } from './rapier-plugin.js';
 import { PhysicsSyncClient } from './sync-client.js';
 
@@ -112,6 +113,7 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     // Wire up server callbacks
     this.syncClient.onBodyAdded((descriptor) => this.handleBodyAdded(descriptor));
     this.syncClient.onBodyRemoved((bodyId) => this.handleBodyRemoved(bodyId));
+    this.syncClient.onMeshBinary((msg) => this.handleMeshBinaryReceived(msg));
     this.syncClient.onSimulationStarted((freshSnapshot) => this.handleSimulationStarted(freshSnapshot));
     this.syncClient.onCollisionEvents((events) => {
       this.collisionCount += events.length;
@@ -178,6 +180,7 @@ export class NetworkedRapierPlugin extends RapierPlugin {
             const descriptor = this.buildDescriptor(body, bodyId, pending, shapeInfo, shape);
             if (descriptor) {
               this.syncClient.addBody(descriptor);
+              this.sendMeshBinaryForBody(body, bodyId);
             }
           }
         });
@@ -195,6 +198,7 @@ export class NetworkedRapierPlugin extends RapierPlugin {
       const descriptor = this.buildDescriptor(record.body, record.bodyId, record.pending, record.shapeInfo, shape);
       if (descriptor) {
         this.syncClient.addBody(descriptor);
+        this.sendMeshBinaryForBody(record.body, record.bodyId);
       }
     }
   }
@@ -287,29 +291,8 @@ export class NetworkedRapierPlugin extends RapierPlugin {
 
     if (!this.scene) return;
 
-    if (descriptor.meshData) {
-      // Async path: mesh deserialization required
-      this.handleBodyAddedAsync(descriptor);
-      return;
-    }
-
-    // Synchronous path: create mesh from shape params
+    // Always take the synchronous path — mesh geometry arrives separately via binary channel
     this.createRemoteBody(descriptor, this.createMeshFromDescriptor(descriptor));
-  }
-
-  private async handleBodyAddedAsync(descriptor: BodyDescriptor): Promise<void> {
-    this.remoteBodyCreationIds.add(descriptor.id);
-    try {
-      const mesh = await this.deserializeMesh(descriptor);
-      // Re-check after await — body may have been added by another path
-      if (this.idToBody.has(descriptor.id)) {
-        mesh.dispose();
-        return;
-      }
-      this.createRemoteBody(descriptor, mesh);
-    } finally {
-      this.remoteBodyCreationIds.delete(descriptor.id);
-    }
   }
 
   private createRemoteBody(descriptor: BodyDescriptor, mesh: Mesh): void {
@@ -404,17 +387,6 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     const rb = this.bodyToRigidBody.get(body);
     const mass = rb ? rb.mass() : undefined;
 
-    // Serialize mesh for remote rendering
-    let meshData: object | undefined;
-    const tn = body.transformNode;
-    if (tn && 'geometry' in tn) {
-      try {
-        meshData = SceneSerializer.SerializeMesh(tn as Mesh);
-      } catch {
-        // Mesh serialization failed — remote clients will create from shape params
-      }
-    }
-
     return {
       id: bodyId,
       shape: shapeDescriptor,
@@ -424,7 +396,6 @@ export class NetworkedRapierPlugin extends RapierPlugin {
       mass,
       friction: material.friction,
       restitution: material.restitution,
-      meshData,
     };
   }
 
@@ -469,23 +440,77 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     }
   }
 
-  // --- Mesh creation for remote bodies ---
+  // --- Binary mesh send/receive ---
 
-  private async deserializeMesh(descriptor: BodyDescriptor): Promise<Mesh> {
-    const json = JSON.stringify(descriptor.meshData);
-    const result = await SceneLoader.ImportMeshAsync('', '', 'data:' + json, this.scene!);
-    const mesh = result.meshes[0] as Mesh;
-    mesh.name = descriptor.id;
-    mesh.id = descriptor.id;
-    mesh.position.set(descriptor.position.x, descriptor.position.y, descriptor.position.z);
-    mesh.rotationQuaternion = new Quaternion(
-      descriptor.rotation.x,
-      descriptor.rotation.y,
-      descriptor.rotation.z,
-      descriptor.rotation.w,
-    );
-    return mesh;
+  private sendMeshBinaryForBody(body: PhysicsBody, bodyId: string): void {
+    const tn = body.transformNode;
+    if (!tn || !('geometry' in tn)) return;
+
+    const mesh = tn as Mesh;
+    const positionsRaw = mesh.getVerticesData('position');
+    const indicesRaw = mesh.getIndices();
+    if (!positionsRaw || !indicesRaw) return;
+
+    const positions = new Float32Array(positionsRaw);
+    const indices = new Uint32Array(indicesRaw);
+
+    const normalsRaw = mesh.getVerticesData('normal');
+    const normals = normalsRaw ? new Float32Array(normalsRaw) : undefined;
+
+    const uvsRaw = mesh.getVerticesData('uv');
+    const uvs = uvsRaw ? new Float32Array(uvsRaw) : undefined;
+
+    const colorsRaw = mesh.getVerticesData('color');
+    const colors = colorsRaw ? new Float32Array(colorsRaw) : undefined;
+
+    let diffuseColor: { r: number; g: number; b: number } | undefined;
+    let specularColor: { r: number; g: number; b: number } | undefined;
+    const mat = mesh.material as StandardMaterial | null;
+    if (mat) {
+      diffuseColor = { r: mat.diffuseColor.r, g: mat.diffuseColor.g, b: mat.diffuseColor.b };
+      specularColor = { r: mat.specularColor.r, g: mat.specularColor.g, b: mat.specularColor.b };
+    }
+
+    const encoded = encodeMeshBinary(bodyId, positions, normals, uvs, colors, indices, diffuseColor, specularColor);
+    this.syncClient.sendMeshBinary(encoded);
   }
+
+  private handleMeshBinaryReceived(msg: MeshBinaryMessage): void {
+    const body = this.idToBody.get(msg.bodyId);
+    if (!body) return;
+
+    const scene = this.scene;
+    if (!scene) return;
+
+    const tn = body.transformNode;
+    if (!tn) return;
+
+    const mesh = tn as Mesh;
+
+    // Apply new vertex data in-place (replaces geometry without swapping the mesh,
+    // which would break the physics body's internal transform node binding).
+    const vertexData = new VertexData();
+    vertexData.positions = msg.positions;
+    if (msg.normals) vertexData.normals = msg.normals;
+    if (msg.uvs) vertexData.uvs = msg.uvs;
+    if (msg.colors) vertexData.colors = msg.colors;
+    vertexData.indices = msg.indices;
+    vertexData.applyToMesh(mesh);
+
+    // Update material colors
+    const oldMat = mesh.material;
+    if (oldMat) oldMat.dispose();
+    const mat = new StandardMaterial(`${msg.bodyId}Mat_bin`, scene);
+    if (msg.diffuseColor) {
+      mat.diffuseColor = new Color3(msg.diffuseColor.r, msg.diffuseColor.g, msg.diffuseColor.b);
+    }
+    if (msg.specularColor) {
+      mat.specularColor = new Color3(msg.specularColor.r, msg.specularColor.g, msg.specularColor.b);
+    }
+    mesh.material = mat;
+  }
+
+  // --- Mesh creation for remote bodies ---
 
   private createMeshFromDescriptor(descriptor: BodyDescriptor): Mesh {
     const scene = this.scene!;

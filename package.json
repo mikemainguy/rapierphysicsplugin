@@ -6,7 +6,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "npm run build -w packages/shared && npm run build -w packages/client -w packages/server -w packages/demo",
     "test": "vitest run",
     "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist packages/*/*.tsbuildinfo"
   },

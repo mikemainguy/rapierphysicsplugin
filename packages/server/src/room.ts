@@ -11,6 +11,7 @@ import {
   MessageType,
   encodeMessage,
   encodeRoomState,
+  readBodyIdFromMeshBinary,
 } from '@rapierphysicsplugin/shared';
 import { PhysicsWorld } from './physics-world.js';
 import { SimulationLoop } from './simulation-loop.js';
@@ -29,6 +30,7 @@ export class Room {
   private initialConstraints: ConstraintDescriptor[] = [];
   private activeConstraints: Map<string, ConstraintDescriptor> = new Map();
   private activeBodies: Map<string, BodyDescriptor> = new Map();
+  private meshBinaryStore: Map<string, Uint8Array> = new Map();
   private currentTick = 0;
   private ticksSinceLastBroadcast = 0;
   private pendingCollisionEvents: CollisionEventData[] = [];
@@ -72,6 +74,11 @@ export class Room {
       constraints: constraints.length > 0 ? constraints : undefined,
       bodies: bodies.length > 0 ? bodies : undefined,
     }));
+
+    // Send stored mesh binaries to the late joiner
+    for (const [, meshData] of this.meshBinaryStore) {
+      conn.send(meshData);
+    }
   }
 
   removeClient(conn: ClientConnection): void {
@@ -88,7 +95,10 @@ export class Room {
   addBody(descriptor: BodyDescriptor): string {
     const id = this.physicsWorld.addBody(descriptor);
     const bodyIndex = this.stateManager.ensureBodyIndex(id);
-    this.activeBodies.set(id, descriptor);
+    // Store descriptor without meshData (mesh geometry arrives via binary channel)
+    const stored = { ...descriptor };
+    delete (stored as Record<string, unknown>).meshData;
+    this.activeBodies.set(id, stored);
 
     // Notify all clients (include the numeric index for the new body)
     this.broadcast(encodeMessage({
@@ -104,6 +114,7 @@ export class Room {
     this.physicsWorld.removeBody(bodyId);
     this.stateManager.removeBody(bodyId);
     this.activeBodies.delete(bodyId);
+    this.meshBinaryStore.delete(bodyId);
 
     // Notify all clients
     this.broadcast(encodeMessage({
@@ -134,6 +145,20 @@ export class Room {
       type: MessageType.REMOVE_CONSTRAINT,
       constraintId,
     }));
+  }
+
+  relayMeshBinary(senderId: string, data: Uint8Array): void {
+    // Extract bodyId from the header to store for late joiners
+    const bodyId = readBodyIdFromMeshBinary(data);
+    // Store a copy for late joiners
+    this.meshBinaryStore.set(bodyId, new Uint8Array(data));
+
+    // Broadcast raw bytes to all clients except sender
+    for (const [clientId, client] of this.clients) {
+      if (clientId !== senderId) {
+        client.send(data);
+      }
+    }
   }
 
   bufferInput(clientId: string, input: import('@rapierphysicsplugin/shared').ClientInput): void {
@@ -223,6 +248,7 @@ export class Room {
     this.currentTick = 0;
     this.ticksSinceLastBroadcast = 0;
     this.pendingCollisionEvents = [];
+    this.meshBinaryStore.clear();
     this.stateManager.clear();
     for (const [, buffer] of this.inputBuffers) {
       buffer.clear();
@@ -276,6 +302,7 @@ export class Room {
     this.pendingCollisionEvents = [];
     this.activeConstraints.clear();
     this.activeBodies.clear();
+    this.meshBinaryStore.clear();
     this.stateManager.clear();
     this.physicsWorld.destroy();
   }

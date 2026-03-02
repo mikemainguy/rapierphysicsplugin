@@ -1,7 +1,8 @@
 import { pack, unpack } from 'msgpackr';
-import type { ClientMessage, ServerMessage, RoomStateMessage } from './protocol.js';
+import type { ClientMessage, ServerMessage, RoomStateMessage, MeshBinaryMessage } from './protocol.js';
 import { MessageType } from './protocol.js';
 import { encodeRoomState, decodeRoomState } from './binary-state-codec.js';
+import { OPCODE_MESH_BINARY, decodeMeshBinary } from './binary-mesh-codec.js';
 
 const OPCODE_ROOM_STATE = 0x01;
 const OPCODE_MSGPACK = 0x02;
@@ -26,6 +27,13 @@ export function decodeMessage(
 ): ClientMessage | ServerMessage {
   if (data[0] === OPCODE_ROOM_STATE) {
     return decodeRoomState(data, indexToId);
+  }
+  if (data[0] === OPCODE_MESH_BINARY) {
+    const decoded = decodeMeshBinary(data);
+    return {
+      type: MessageType.MESH_BINARY,
+      ...decoded,
+    } as MeshBinaryMessage;
   }
   if (data[0] === OPCODE_MSGPACK) {
     return unpack(data.subarray(1)) as ClientMessage | ServerMessage;

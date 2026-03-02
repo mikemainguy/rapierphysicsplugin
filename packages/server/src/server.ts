@@ -6,6 +6,8 @@ import {
   decodeClientMessage,
   encodeMessage,
   DEFAULT_PORT,
+  OPCODE_MESH_BINARY,
+  readBodyIdFromMeshBinary,
 } from '@rapierphysicsplugin/shared';
 import type { ClientMessage } from '@rapierphysicsplugin/shared';
 import { RoomManager } from './room.js';
@@ -58,7 +60,20 @@ export class PhysicsServer {
 
     ws.on('message', (data: Buffer) => {
       try {
-        const message = decodeClientMessage(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+        const buf = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+
+        // Intercept mesh binary — relay without full decode
+        if (buf[0] === OPCODE_MESH_BINARY) {
+          if (conn.roomId) {
+            const room = this.roomManager.getRoom(conn.roomId);
+            if (room) {
+              room.relayMeshBinary(conn.id, buf);
+            }
+          }
+          return;
+        }
+
+        const message = decodeClientMessage(buf);
         this.handleMessage(conn, message);
       } catch (err) {
         console.error(`Error processing message from ${clientId}:`, err);

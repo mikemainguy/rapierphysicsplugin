@@ -26,6 +26,7 @@ export enum MessageType {
   COLLISION_EVENTS = 'collision_events',
   ADD_CONSTRAINT = 'add_constraint',
   REMOVE_CONSTRAINT = 'remove_constraint',
+  MESH_BINARY = 'mesh_binary',
   ERROR = 'error',
 }
 
@@ -87,6 +88,18 @@ export interface AddConstraintMessage {
 export interface RemoveConstraintMessage {
   type: MessageType.REMOVE_CONSTRAINT;
   constraintId: string;
+}
+
+export interface MeshBinaryMessage {
+  type: MessageType.MESH_BINARY;
+  bodyId: string;
+  positions: Float32Array;
+  normals?: Float32Array;
+  uvs?: Float32Array;
+  colors?: Float32Array;
+  indices: Uint32Array;
+  diffuseColor?: { r: number; g: number; b: number };
+  specularColor?: { r: number; g: number; b: number };
 }
 
 // --- Server → Client messages ---
@@ -151,7 +164,8 @@ export type ClientMessage =
   | StartSimulationMessage
   | BodyEventMessage
   | AddConstraintMessage
-  | RemoveConstraintMessage;
+  | RemoveConstraintMessage
+  | MeshBinaryMessage;
 
 export type ServerMessage =
   | ClockSyncResponseMessage
@@ -165,4 +179,5 @@ export type ServerMessage =
   | RemoveBodyMessage
   | BodyEventMessage
   | AddConstraintMessage
-  | RemoveConstraintMessage;
+  | RemoveConstraintMessage
+  | MeshBinaryMessage;
