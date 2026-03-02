@@ -76,10 +76,19 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
   private maxLinearVelocity = 200;
   private maxAngularVelocity = 200;
 
+  // Phase 0: New data structures
+  private bodyToShape = new Map<PhysicsBody, PhysicsShape>();
+  private shapeToBody = new Map<PhysicsShape, PhysicsBody>();
+  private compoundChildren = new Map<PhysicsShape, Array<{ child: PhysicsShape; translation?: Vector3; rotation?: Quaternion; scale?: Vector3 }>>();
+  private bodyEventMask = new Map<PhysicsBody, number>();
+  private eventQueue!: RAPIER.EventQueue;
+  private colliderHandleToBody = new Map<number, PhysicsBody>();
+
   constructor(rapier: typeof RAPIER, gravity?: Vector3) {
     this.rapier = rapier;
     const g = gravity ?? new Vector3(0, -9.81, 0);
     this.world = new rapier.World(new rapier.Vector3(g.x, g.y, g.z));
+    this.eventQueue = new rapier.EventQueue(false);
   }
 
   // --- Core ---
@@ -114,7 +123,131 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
   }
 
   executeStep(delta: number, bodies: Array<PhysicsBody>): void {
-    this.world.step();
+    this.world.step(this.eventQueue);
+
+    // Process collision events
+    this.eventQueue.drainCollisionEvents((handle1: number, handle2: number, started: boolean) => {
+      const body1 = this.colliderHandleToBody.get(handle1);
+      const body2 = this.colliderHandleToBody.get(handle2);
+      if (!body1 || !body2) return;
+
+      const collider1 = this.world.getCollider(handle1);
+      const collider2 = this.world.getCollider(handle2);
+      if (!collider1 || !collider2) return;
+
+      const isSensor = collider1.isSensor() || collider2.isSensor();
+
+      if (isSensor) {
+        // Trigger events
+        const eventType = started ? PhysicsEventType.TRIGGER_ENTERED : PhysicsEventType.TRIGGER_EXITED;
+        const baseEvent1: IBasePhysicsCollisionEvent = {
+          collider: body1,
+          collidedAgainst: body2,
+          colliderIndex: 0,
+          collidedAgainstIndex: 0,
+          type: eventType,
+        };
+        const baseEvent2: IBasePhysicsCollisionEvent = {
+          collider: body2,
+          collidedAgainst: body1,
+          colliderIndex: 0,
+          collidedAgainstIndex: 0,
+          type: eventType,
+        };
+
+        this.onTriggerCollisionObservable.notifyObservers(baseEvent1);
+
+        if (this.collisionCallbackEnabled.has(body1)) {
+          const triggerEvent: IPhysicsCollisionEvent = { ...baseEvent1, point: null, normal: null, distance: 0, impulse: 0 };
+          this.bodyCollisionObservables.get(body1)?.notifyObservers(triggerEvent);
+        }
+        if (this.collisionCallbackEnabled.has(body2)) {
+          const triggerEvent: IPhysicsCollisionEvent = { ...baseEvent2, point: null, normal: null, distance: 0, impulse: 0 };
+          this.bodyCollisionObservables.get(body2)?.notifyObservers(triggerEvent);
+        }
+      } else if (started) {
+        // Collision started — extract contact data
+        let point: Nullable<Vector3> = null;
+        let normal: Nullable<Vector3> = null;
+        let impulse = 0;
+
+        this.world.contactPair(collider1, collider2, (manifold, flipped) => {
+          const n = manifold.normal();
+          normal = flipped
+            ? new Vector3(-n.x, -n.y, -n.z)
+            : new Vector3(n.x, n.y, n.z);
+
+          if (manifold.numContacts() > 0) {
+            const cp = manifold.localContactPoint1(0);
+            if (cp) {
+              // Transform local contact point to world space using collider translation
+              const t = collider1.translation();
+              point = new Vector3(cp.x + t.x, cp.y + t.y, cp.z + t.z);
+            }
+            impulse = manifold.contactImpulse(0);
+          }
+        });
+
+        const eventType = PhysicsEventType.COLLISION_STARTED;
+        const fullEvent1: IPhysicsCollisionEvent = {
+          collider: body1,
+          collidedAgainst: body2,
+          colliderIndex: 0,
+          collidedAgainstIndex: 0,
+          type: eventType,
+          point,
+          normal,
+          distance: 0,
+          impulse,
+        };
+        const fullEvent2: IPhysicsCollisionEvent = {
+          collider: body2,
+          collidedAgainst: body1,
+          colliderIndex: 0,
+          collidedAgainstIndex: 0,
+          type: eventType,
+          point,
+          normal: normal ? (normal as Vector3).negate() : null,
+          distance: 0,
+          impulse,
+        };
+
+        this.onCollisionObservable.notifyObservers(fullEvent1);
+
+        if (this.collisionCallbackEnabled.has(body1)) {
+          this.bodyCollisionObservables.get(body1)?.notifyObservers(fullEvent1);
+        }
+        if (this.collisionCallbackEnabled.has(body2)) {
+          this.bodyCollisionObservables.get(body2)?.notifyObservers(fullEvent2);
+        }
+      } else {
+        // Collision ended
+        const eventType = PhysicsEventType.COLLISION_FINISHED;
+        const baseEvent1: IBasePhysicsCollisionEvent = {
+          collider: body1,
+          collidedAgainst: body2,
+          colliderIndex: 0,
+          collidedAgainstIndex: 0,
+          type: eventType,
+        };
+        const baseEvent2: IBasePhysicsCollisionEvent = {
+          collider: body2,
+          collidedAgainst: body1,
+          colliderIndex: 0,
+          collidedAgainstIndex: 0,
+          type: eventType,
+        };
+
+        this.onCollisionEndedObservable.notifyObservers(baseEvent1);
+
+        if (this.collisionEndedCallbackEnabled.has(body1)) {
+          this.bodyCollisionEndedObservables.get(body1)?.notifyObservers(baseEvent1);
+        }
+        if (this.collisionEndedCallbackEnabled.has(body2)) {
+          this.bodyCollisionEndedObservables.get(body2)?.notifyObservers(baseEvent2);
+        }
+      }
+    });
 
     // Sync transforms back to BabylonJS bodies
     for (const body of bodies) {
@@ -163,6 +296,12 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
   disposeBody(body: PhysicsBody): void {
     const rb = this.bodyToRigidBody.get(body);
     if (rb) {
+      // Clean up collider handle mappings before removing the rigid body
+      const colliders = this.bodyToColliders.get(body) ?? [];
+      for (const col of colliders) {
+        this.colliderHandleToBody.delete(col.handle);
+      }
+
       this.world.removeRigidBody(rb);
       this.bodyToRigidBody.delete(body);
       this.bodyToColliders.delete(body);
@@ -170,6 +309,14 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
       this.bodyCollisionEndedObservables.delete(body);
       this.collisionCallbackEnabled.delete(body);
       this.collisionEndedCallbackEnabled.delete(body);
+
+      // Clean up shape associations
+      const shape = this.bodyToShape.get(body);
+      if (shape) {
+        this.shapeToBody.delete(shape);
+      }
+      this.bodyToShape.delete(body);
+      this.bodyEventMask.delete(body);
     }
   }
 
@@ -268,7 +415,21 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
         break;
       }
       case PhysicsShapeType.HEIGHTFIELD: {
-        colliderDesc = this.rapier.ColliderDesc.ball(0.5);
+        const heights = options.heightFieldData;
+        const nrows = (options.numHeightFieldSamplesX ?? 2) - 1;
+        const ncols = (options.numHeightFieldSamplesZ ?? 2) - 1;
+        const sizeX = options.heightFieldSizeX ?? 1;
+        const sizeZ = options.heightFieldSizeZ ?? 1;
+        if (heights) {
+          colliderDesc = this.rapier.ColliderDesc.heightfield(
+            nrows,
+            ncols,
+            heights,
+            new this.rapier.Vector3(sizeX, 1, sizeZ)
+          );
+        } else {
+          colliderDesc = this.rapier.ColliderDesc.ball(0.5);
+        }
         break;
       }
       default:
@@ -283,9 +444,17 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
     const rb = this.bodyToRigidBody.get(body);
     if (!rb) return;
 
+    // Clean up old shape associations
+    const oldShape = this.bodyToShape.get(body);
+    if (oldShape) {
+      this.shapeToBody.delete(oldShape);
+      this.bodyToShape.delete(body);
+    }
+
     // Remove existing colliders
     const existing = this.bodyToColliders.get(body) ?? [];
     for (const col of existing) {
+      this.colliderHandleToBody.delete(col.handle);
       this.world.removeCollider(col, false);
     }
 
@@ -294,15 +463,28 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
       return;
     }
 
+    // Track shape↔body mapping
+    this.bodyToShape.set(body, shape);
+    this.shapeToBody.set(shape, body);
+
+    // For CONTAINER shapes, delegate to compound collider builder
+    const shapeType = this.shapeTypeMap.get(shape);
+    if (shapeType === PhysicsShapeType.CONTAINER) {
+      this.rebuildCompoundColliders(body, shape);
+      return;
+    }
+
     const desc = this.shapeToColliderDesc.get(shape);
     if (!desc) return;
 
     const collider = this.world.createCollider(desc, rb);
+    this.applyShapePropertiesToCollider(collider, shape);
+    this.colliderHandleToBody.set(collider.handle, body);
     this.bodyToColliders.set(body, [collider]);
   }
 
-  getShape(_body: PhysicsBody): Nullable<PhysicsShape> {
-    return null;
+  getShape(body: PhysicsBody): Nullable<PhysicsShape> {
+    return this.bodyToShape.get(body) ?? null;
   }
 
   getShapeType(shape: PhysicsShape): PhysicsShapeType {
@@ -314,12 +496,18 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
     this.shapeTypeMap.delete(shape);
     this.shapeMaterialMap.delete(shape);
     this.shapeDensityMap.delete(shape);
+    this.shapeFilterMembership.delete(shape);
+    this.shapeFilterCollide.delete(shape);
+    this.triggerShapes.delete(shape);
+    this.compoundChildren.delete(shape);
+    this.shapeToBody.delete(shape);
   }
 
   // --- Shape filtering ---
 
   setShapeFilterMembershipMask(shape: PhysicsShape, membershipMask: number): void {
     this.shapeFilterMembership.set(shape, membershipMask);
+    this.applyCollisionGroups(shape);
   }
 
   getShapeFilterMembershipMask(shape: PhysicsShape): number {
@@ -328,6 +516,7 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
 
   setShapeFilterCollideMask(shape: PhysicsShape, collideMask: number): void {
     this.shapeFilterCollide.set(shape, collideMask);
+    this.applyCollisionGroups(shape);
   }
 
   getShapeFilterCollideMask(shape: PhysicsShape): number {
@@ -338,7 +527,10 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
 
   setMaterial(shape: PhysicsShape, material: PhysicsMaterial): void {
     this.shapeMaterialMap.set(shape, material);
-    // Apply to all colliders that use this shape — would need shape→body mapping
+    for (const collider of this.getCollidersForShape(shape)) {
+      if (material.friction !== undefined) collider.setFriction(material.friction);
+      if (material.restitution !== undefined) collider.setRestitution(material.restitution);
+    }
   }
 
   getMaterial(shape: PhysicsShape): PhysicsMaterial {
@@ -347,6 +539,9 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
 
   setDensity(shape: PhysicsShape, density: number): void {
     this.shapeDensityMap.set(shape, density);
+    for (const collider of this.getCollidersForShape(shape)) {
+      collider.setDensity(density);
+    }
   }
 
   getDensity(shape: PhysicsShape): number {
@@ -355,26 +550,67 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
 
   // --- Compound shapes ---
 
-  addChild(_shape: PhysicsShape, _newChild: PhysicsShape, _translation?: Vector3, _rotation?: Quaternion, _scale?: Vector3): void {
-    // Compound shape support — stub
+  addChild(shape: PhysicsShape, newChild: PhysicsShape, translation?: Vector3, rotation?: Quaternion, scale?: Vector3): void {
+    let children = this.compoundChildren.get(shape);
+    if (!children) {
+      children = [];
+      this.compoundChildren.set(shape, children);
+    }
+    children.push({ child: newChild, translation, rotation, scale });
+
+    // Rebuild colliders if this shape is already attached to a body
+    const body = this.shapeToBody.get(shape);
+    if (body) {
+      this.rebuildCompoundColliders(body, shape);
+    }
   }
 
-  removeChild(_shape: PhysicsShape, _childIndex: number): void {
-    // Compound shape support — stub
+  removeChild(shape: PhysicsShape, childIndex: number): void {
+    const children = this.compoundChildren.get(shape);
+    if (!children || childIndex < 0 || childIndex >= children.length) return;
+    children.splice(childIndex, 1);
+
+    // Rebuild colliders if this shape is already attached to a body
+    const body = this.shapeToBody.get(shape);
+    if (body) {
+      this.rebuildCompoundColliders(body, shape);
+    }
   }
 
-  getNumChildren(_shape: PhysicsShape): number {
-    return 0;
+  getNumChildren(shape: PhysicsShape): number {
+    return this.compoundChildren.get(shape)?.length ?? 0;
   }
 
   // --- Bounding box ---
 
-  getBoundingBox(_shape: PhysicsShape): BoundingBox {
-    return new BoundingBox(new Vector3(-0.5, -0.5, -0.5), new Vector3(0.5, 0.5, 0.5));
+  getBoundingBox(shape: PhysicsShape): BoundingBox {
+    const colliders = this.getCollidersForShape(shape);
+    if (colliders.length === 0) {
+      return new BoundingBox(new Vector3(-0.5, -0.5, -0.5), new Vector3(0.5, 0.5, 0.5));
+    }
+    return this.computeColliderBoundingBox(colliders[0]);
   }
 
-  getBodyBoundingBox(_body: PhysicsBody): BoundingBox {
-    return new BoundingBox(new Vector3(-0.5, -0.5, -0.5), new Vector3(0.5, 0.5, 0.5));
+  getBodyBoundingBox(body: PhysicsBody): BoundingBox {
+    const colliders = this.bodyToColliders.get(body) ?? [];
+    if (colliders.length === 0) {
+      return new BoundingBox(new Vector3(-0.5, -0.5, -0.5), new Vector3(0.5, 0.5, 0.5));
+    }
+
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+    for (const collider of colliders) {
+      const bb = this.computeColliderBoundingBox(collider);
+      minX = Math.min(minX, bb.minimum.x);
+      minY = Math.min(minY, bb.minimum.y);
+      minZ = Math.min(minZ, bb.minimum.z);
+      maxX = Math.max(maxX, bb.maximum.x);
+      maxY = Math.max(maxY, bb.maximum.y);
+      maxZ = Math.max(maxZ, bb.maximum.z);
+    }
+
+    return new BoundingBox(new Vector3(minX, minY, minZ), new Vector3(maxX, maxY, maxZ));
   }
 
   // --- Triggers & collision callbacks ---
@@ -384,6 +620,9 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
       this.triggerShapes.add(shape);
     } else {
       this.triggerShapes.delete(shape);
+    }
+    for (const collider of this.getCollidersForShape(shape)) {
+      collider.setSensor(isTrigger);
     }
   }
 
@@ -405,12 +644,12 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
 
   // --- Event mask ---
 
-  setEventMask(_body: PhysicsBody, _eventMask: number, _instanceIndex?: number): void {
-    // Event mask stub
+  setEventMask(body: PhysicsBody, eventMask: number, _instanceIndex?: number): void {
+    this.bodyEventMask.set(body, eventMask);
   }
 
-  getEventMask(_body: PhysicsBody, _instanceIndex?: number): number {
-    return 0;
+  getEventMask(body: PhysicsBody, _instanceIndex?: number): number {
+    return this.bodyEventMask.get(body) ?? 0;
   }
 
   // --- Motion type ---
@@ -443,20 +682,50 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
 
   // --- Mass properties ---
 
-  computeMassProperties(_body: PhysicsBody, _instanceIndex?: number): PhysicsMassProperties {
-    return { mass: 1, centerOfMass: Vector3.Zero(), inertia: Vector3.One(), inertiaOrientation: Quaternion.Identity() };
+  computeMassProperties(body: PhysicsBody, _instanceIndex?: number): PhysicsMassProperties {
+    const rb = this.bodyToRigidBody.get(body);
+    if (!rb) return { mass: 1, centerOfMass: Vector3.Zero(), inertia: Vector3.One(), inertiaOrientation: Quaternion.Identity() };
+    const com = rb.localCom();
+    const inertia = rb.principalInertia();
+    const inertiaFrame = rb.principalInertiaLocalFrame();
+    return {
+      mass: rb.mass(),
+      centerOfMass: new Vector3(com.x, com.y, com.z),
+      inertia: new Vector3(inertia.x, inertia.y, inertia.z),
+      inertiaOrientation: new Quaternion(inertiaFrame.x, inertiaFrame.y, inertiaFrame.z, inertiaFrame.w),
+    };
   }
 
   setMassProperties(body: PhysicsBody, massProps: PhysicsMassProperties, _instanceIndex?: number): void {
     const rb = this.bodyToRigidBody.get(body);
     if (!rb) return;
-    if (massProps.mass !== undefined) {
-      rb.setAdditionalMass(massProps.mass, true);
-    }
+
+    const mass = massProps.mass ?? 0;
+    const com = massProps.centerOfMass ?? Vector3.Zero();
+    const inertia = massProps.inertia ?? Vector3.Zero();
+    const inertiaOrientation = massProps.inertiaOrientation ?? Quaternion.Identity();
+
+    rb.setAdditionalMassProperties(
+      mass,
+      new this.rapier.Vector3(com.x, com.y, com.z),
+      new this.rapier.Vector3(inertia.x, inertia.y, inertia.z),
+      new this.rapier.Quaternion(inertiaOrientation.x, inertiaOrientation.y, inertiaOrientation.z, inertiaOrientation.w),
+      true
+    );
   }
 
-  getMassProperties(_body: PhysicsBody, _instanceIndex?: number): PhysicsMassProperties {
-    return { mass: 1, centerOfMass: Vector3.Zero(), inertia: Vector3.One(), inertiaOrientation: Quaternion.Identity() };
+  getMassProperties(body: PhysicsBody, _instanceIndex?: number): PhysicsMassProperties {
+    const rb = this.bodyToRigidBody.get(body);
+    if (!rb) return { mass: 1, centerOfMass: Vector3.Zero(), inertia: Vector3.One(), inertiaOrientation: Quaternion.Identity() };
+    const com = rb.localCom();
+    const inertia = rb.principalInertia();
+    const inertiaFrame = rb.principalInertiaLocalFrame();
+    return {
+      mass: rb.mass(),
+      centerOfMass: new Vector3(com.x, com.y, com.z),
+      inertia: new Vector3(inertia.x, inertia.y, inertia.z),
+      inertiaOrientation: new Quaternion(inertiaFrame.x, inertiaFrame.y, inertiaFrame.z, inertiaFrame.w),
+    };
   }
 
   // --- Damping ---
@@ -915,12 +1184,14 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
       new this.rapier.Vector3(normalizedDir.x, normalizedDir.y, normalizedDir.z)
     );
 
-    const hit = this.world.castRay(ray, maxToi, true);
+    const hit = this.world.castRayAndGetNormal(ray, maxToi, true);
     if (hit) {
       const hitPoint = ray.pointAt(hit.timeOfImpact);
+      const hitNormal = hit.normal;
+      // setHitData signature: (hitNormal, hitPoint)
       result.setHitData(
-        new Vector3(hitPoint.x, hitPoint.y, hitPoint.z),
-        new Vector3(0, 1, 0) // Normal approximation
+        new Vector3(hitNormal.x, hitNormal.y, hitNormal.z),
+        new Vector3(hitPoint.x, hitPoint.y, hitPoint.z)
       );
       result.calculateHitDistance();
     }
@@ -929,6 +1200,7 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
   // --- Dispose ---
 
   dispose(): void {
+    this.eventQueue.free();
     this.world.free();
     this.bodyToRigidBody.clear();
     this.bodyToColliders.clear();
@@ -943,6 +1215,127 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
     this.collisionEndedCallbackEnabled.clear();
     this.triggerShapes.clear();
     this.bodyIdToPhysicsBody.clear();
+    this.bodyToShape.clear();
+    this.shapeToBody.clear();
+    this.compoundChildren.clear();
+    this.bodyEventMask.clear();
+    this.colliderHandleToBody.clear();
+    this.shapeFilterMembership.clear();
+    this.shapeFilterCollide.clear();
+  }
+
+  // --- Internal helpers ---
+
+  private getCollidersForShape(shape: PhysicsShape): RAPIER.Collider[] {
+    const body = this.shapeToBody.get(shape);
+    if (!body) return [];
+    return this.bodyToColliders.get(body) ?? [];
+  }
+
+  private applyCollisionGroups(shape: PhysicsShape): void {
+    const membership = this.shapeFilterMembership.get(shape) ?? 0xFFFF;
+    const collide = this.shapeFilterCollide.get(shape) ?? 0xFFFF;
+    // Rapier InteractionGroups: upper 16 bits = membership, lower 16 bits = filter
+    const groups = ((membership & 0xFFFF) << 16) | (collide & 0xFFFF);
+    for (const collider of this.getCollidersForShape(shape)) {
+      collider.setCollisionGroups(groups);
+    }
+  }
+
+  private applyShapePropertiesToCollider(collider: RAPIER.Collider, shape: PhysicsShape): void {
+    // Material
+    const material = this.shapeMaterialMap.get(shape);
+    if (material) {
+      if (material.friction !== undefined) collider.setFriction(material.friction);
+      if (material.restitution !== undefined) collider.setRestitution(material.restitution);
+    }
+    // Density
+    const density = this.shapeDensityMap.get(shape);
+    if (density !== undefined) collider.setDensity(density);
+    // Trigger
+    if (this.triggerShapes.has(shape)) collider.setSensor(true);
+    // Collision groups
+    const membership = this.shapeFilterMembership.get(shape) ?? 0xFFFF;
+    const collide = this.shapeFilterCollide.get(shape) ?? 0xFFFF;
+    const groups = ((membership & 0xFFFF) << 16) | (collide & 0xFFFF);
+    collider.setCollisionGroups(groups);
+    // Enable collision events
+    collider.setActiveEvents(this.rapier.ActiveEvents.COLLISION_EVENTS);
+  }
+
+  private computeColliderBoundingBox(collider: RAPIER.Collider): BoundingBox {
+    const shapeType = collider.shapeType();
+    const RAPIER = this.rapier;
+    const t = collider.translation();
+
+    // Use Rapier's shape type enum to determine geometry
+    if (shapeType === RAPIER.ShapeType.Cuboid) {
+      const he = collider.halfExtents();
+      return new BoundingBox(
+        new Vector3(t.x - he.x, t.y - he.y, t.z - he.z),
+        new Vector3(t.x + he.x, t.y + he.y, t.z + he.z)
+      );
+    } else if (shapeType === RAPIER.ShapeType.Ball) {
+      const r = collider.radius();
+      return new BoundingBox(
+        new Vector3(t.x - r, t.y - r, t.z - r),
+        new Vector3(t.x + r, t.y + r, t.z + r)
+      );
+    } else if (shapeType === RAPIER.ShapeType.Capsule) {
+      const r = collider.radius();
+      const hh = collider.halfHeight();
+      return new BoundingBox(
+        new Vector3(t.x - r, t.y - hh - r, t.z - r),
+        new Vector3(t.x + r, t.y + hh + r, t.z + r)
+      );
+    } else if (shapeType === RAPIER.ShapeType.Cylinder) {
+      const r = collider.radius();
+      const hh = collider.halfHeight();
+      return new BoundingBox(
+        new Vector3(t.x - r, t.y - hh, t.z - r),
+        new Vector3(t.x + r, t.y + hh, t.z + r)
+      );
+    }
+
+    // Fallback for mesh/convex/other shapes
+    return new BoundingBox(
+      new Vector3(t.x - 0.5, t.y - 0.5, t.z - 0.5),
+      new Vector3(t.x + 0.5, t.y + 0.5, t.z + 0.5)
+    );
+  }
+
+  private rebuildCompoundColliders(body: PhysicsBody, shape: PhysicsShape): void {
+    const rb = this.bodyToRigidBody.get(body);
+    if (!rb) return;
+
+    // Remove all existing colliders
+    const existing = this.bodyToColliders.get(body) ?? [];
+    for (const col of existing) {
+      this.colliderHandleToBody.delete(col.handle);
+      this.world.removeCollider(col, false);
+    }
+
+    const children = this.compoundChildren.get(shape) ?? [];
+    const newColliders: RAPIER.Collider[] = [];
+
+    for (const entry of children) {
+      const childDesc = this.shapeToColliderDesc.get(entry.child);
+      if (!childDesc) continue;
+
+      if (entry.translation) {
+        childDesc.setTranslation(entry.translation.x, entry.translation.y, entry.translation.z);
+      }
+      if (entry.rotation) {
+        childDesc.setRotation(new this.rapier.Quaternion(entry.rotation.x, entry.rotation.y, entry.rotation.z, entry.rotation.w));
+      }
+
+      const collider = this.world.createCollider(childDesc, rb);
+      this.applyShapePropertiesToCollider(collider, shape);
+      this.colliderHandleToBody.set(collider.handle, body);
+      newColliders.push(collider);
+    }
+
+    this.bodyToColliders.set(body, newColliders);
   }
 
   // --- Rapier-specific helpers for sync module ---
