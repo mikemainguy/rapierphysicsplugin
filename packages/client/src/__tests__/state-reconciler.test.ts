@@ -22,9 +22,10 @@ describe('StateReconciler', () => {
   it('should separate local and remote bodies', () => {
     reconciler.addLocalBody('player1');
 
+    const timestamp = Date.now();
     const snapshot: RoomSnapshot = {
       tick: 10,
-      timestamp: Date.now(),
+      timestamp,
       bodies: [
         makeState('player1', 1, 2, 3),
         makeState('enemy1', 4, 5, 6),
@@ -32,8 +33,12 @@ describe('StateReconciler', () => {
     };
 
     const result = reconciler.processServerState(snapshot);
+    // Local body goes to corrections
     expect(result.localCorrections.has('player1')).toBe(true);
-    expect(result.remoteStates.has('enemy1')).toBe(true);
+    // Remote body is fed to interpolator — query it at render time
+    const interpolated = reconciler.getInterpolatedRemoteState('enemy1', timestamp);
+    expect(interpolated).not.toBeNull();
+    expect(interpolated!.position.x).toBeCloseTo(4, 1);
   });
 
   it('should discard old pending inputs', () => {

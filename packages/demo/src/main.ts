@@ -250,33 +250,12 @@ async function main() {
     }
   });
 
-  // 7. Listen for state updates
+  // 7. Listen for state updates (feed interpolator + bookkeeping only, no mesh updates)
+  let lastTick = 0;
+  let lastDeltaCount = 0;
   syncClient.onStateUpdate((state: RoomSnapshot) => {
-    for (const body of state.bodies) {
-      updateMesh(body);
-    }
-
-    // Update constraint visualization (lines, pivots, axes)
-    updateConstraintViz();
-
-    // Update debug overlay
-    const clockSync = syncClient.getClockSync();
-    const rtt = clockSync.getRTT();
-    const offset = clockSync.getClockOffset();
-    const tick = state.tick;
-    const fps = engine.getFps();
-    const sent = syncClient.bytesSent;
-    const recv = syncClient.bytesReceived;
-    debugEl.textContent =
-      `FPS: ${fps.toFixed(0)}\n` +
-      `Tick: ${tick}\n` +
-      `RTT: ${rtt.toFixed(1)} ms\n` +
-      `Clock offset: ${offset.toFixed(1)} ms\n` +
-      `Bodies: ${syncClient.totalBodyCount} (delta: ${state.bodies.length})\n` +
-      `WS sent: ${formatBytes(sent)}\n` +
-      `WS recv: ${formatBytes(recv)}\n` +
-      `Collisions: ${collisionCount}\n` +
-      `Client: ${syncClient.getClientId() ?? '?'}`;
+    lastTick = state.tick;
+    lastDeltaCount = state.bodies.length;
   });
 
   // 8. Click to apply impulse (works on any dynamic body)
@@ -300,10 +279,70 @@ async function main() {
     }
   };
 
-  // 9. Render loop
+  // 9. Render loop — query interpolator at 60Hz for smooth mesh updates
+  const reconciler = syncClient.getReconciler();
+  const interpolator = reconciler.getInterpolator();
+  const clockSync = syncClient.getClockSync();
+
   engine.runRenderLoop(() => {
+    const serverTime = clockSync.getServerTime();
+
+    // Reset per-frame stats before querying
+    interpolator.resetStats();
+
+    // Update meshes from interpolator
+    for (const [bodyId, mesh] of meshMap) {
+      const interpolated = reconciler.getInterpolatedRemoteState(bodyId, serverTime);
+      if (interpolated) {
+        mesh.position.set(interpolated.position.x, interpolated.position.y, interpolated.position.z);
+        if (!mesh.rotationQuaternion) {
+          mesh.rotationQuaternion = new Quaternion();
+        }
+        mesh.rotationQuaternion.set(
+          interpolated.rotation.x,
+          interpolated.rotation.y,
+          interpolated.rotation.z,
+          interpolated.rotation.w,
+        );
+      }
+      // If null (e.g. static body with no updates), mesh keeps its initial position
+    }
+
+    // Update constraint visualization (lines, pivots, axes)
+    updateConstraintViz();
+
     scene.render();
     updateConstraintLabels(scene, engine);
+
+    // Update debug overlay with interpolation diagnostics
+    const stats = interpolator.getStats();
+    const rtt = clockSync.getRTT();
+    const offset = clockSync.getClockOffset();
+    const fps = engine.getFps();
+    const sent = syncClient.bytesSent;
+    const recv = syncClient.bytesReceived;
+
+    let sampleInfo = '';
+    if (stats.sampleBodyId) {
+      const gap = stats.sampleRenderTime - stats.sampleBufferNewest;
+      sampleInfo =
+        `  buf[${stats.sampleBufferLen}] t=${stats.sampleT.toFixed(3)}\n` +
+        `  renderGap: ${gap.toFixed(0)} ms`;
+    }
+
+    debugEl.textContent =
+      `FPS: ${fps.toFixed(0)}\n` +
+      `Tick: ${lastTick}\n` +
+      `RTT: ${rtt.toFixed(1)} ms\n` +
+      `Clock offset: ${offset.toFixed(1)} ms\n` +
+      `Bodies: ${syncClient.totalBodyCount} (delta: ${lastDeltaCount})\n` +
+      `Interp: ${stats.interpolatedCount} extrap: ${stats.extrapolatedCount} stale: ${stats.staleCount} empty: ${stats.emptyCount}\n` +
+      `RenderDelay: ${stats.renderDelay.toFixed(0)} ms\n` +
+      `${sampleInfo}\n` +
+      `WS sent: ${formatBytes(sent)}\n` +
+      `WS recv: ${formatBytes(recv)}\n` +
+      `Collisions: ${collisionCount}\n` +
+      `Client: ${syncClient.getClientId() ?? '?'}`;
   });
 
   window.addEventListener('resize', () => {
@@ -855,23 +894,6 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1048576).toFixed(1)} MB`;
-}
-
-function updateMesh(body: BodyState) {
-  const mesh = meshMap.get(body.id);
-  if (!mesh) return;
-
-  mesh.position.set(body.position.x, body.position.y, body.position.z);
-
-  if (!mesh.rotationQuaternion) {
-    mesh.rotationQuaternion = new Quaternion();
-  }
-  mesh.rotationQuaternion.set(
-    body.rotation.x,
-    body.rotation.y,
-    body.rotation.z,
-    body.rotation.w,
-  );
 }
 
 main();

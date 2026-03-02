@@ -52,19 +52,13 @@ export class StateReconciler {
       input => input.tick > snapshot.tick
     );
 
-    const currentTime = Date.now();
-
     for (const body of snapshot.bodies) {
       if (this.localBodyIds.has(body.id)) {
         // Local body — check if correction needed
         result.localCorrections.set(body.id, body);
       } else {
-        // Remote body — feed to interpolator
+        // Remote body — feed to interpolator (render loop queries at proper render time)
         this.interpolator.addSnapshot(body.id, body, snapshot.timestamp);
-        const interpolated = this.interpolator.getInterpolatedState(body.id, currentTime);
-        if (interpolated) {
-          result.remoteStates.set(body.id, interpolated);
-        }
       }
     }
 
