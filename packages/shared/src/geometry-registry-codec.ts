@@ -11,11 +11,11 @@
  *   [colors: Float32Array]      -- vertexCount × 4 floats (if flag bit 2)
  *   [indices: Uint32Array]      -- indexCount uint32s
  *
- * MESH_REF (0x05) — sent per body (~50 bytes):
+ * MESH_REF (0x05) — sent per body (~small):
  *   [opcode: u8 = 0x05]
  *   [bodyIdLength: u8] [bodyId: utf8]
  *   [hashLength: u8] [geometryHash: utf8]
- *   [diffuseRGB: 3×f32] [specularRGB: 3×f32]
+ *   [materialHashLength: u8] [materialHash: utf8]
  */
 
 export const OPCODE_GEOMETRY_DEF = 0x04;
@@ -37,8 +37,7 @@ export interface GeometryDefData {
 export interface MeshRefData {
   bodyId: string;
   geometryHash: string;
-  diffuseColor: { r: number; g: number; b: number };
-  specularColor: { r: number; g: number; b: number };
+  materialHash: string;
 }
 
 // --- FNV-1a 32-bit hash ---
@@ -222,15 +221,15 @@ export function decodeGeometryDef(data: Uint8Array): GeometryDefData {
 export function encodeMeshRef(
   bodyId: string,
   geometryHash: string,
-  diffuseColor: { r: number; g: number; b: number },
-  specularColor: { r: number; g: number; b: number },
+  materialHash: string,
 ): Uint8Array {
   const encoder = new TextEncoder();
   const bodyIdBytes = encoder.encode(bodyId);
   const hashBytes = encoder.encode(geometryHash);
+  const matHashBytes = encoder.encode(materialHash);
 
-  // opcode(1) + bodyIdLen(1) + bodyId + hashLen(1) + hash + diffuse(12) + specular(12)
-  const totalSize = 1 + 1 + bodyIdBytes.length + 1 + hashBytes.length + 12 + 12;
+  // opcode(1) + bodyIdLen(1) + bodyId + hashLen(1) + hash + matHashLen(1) + matHash
+  const totalSize = 1 + 1 + bodyIdBytes.length + 1 + hashBytes.length + 1 + matHashBytes.length;
 
   const buf = new ArrayBuffer(totalSize);
   const view = new DataView(buf);
@@ -242,16 +241,8 @@ export function encodeMeshRef(
   arr.set(bodyIdBytes, offset); offset += bodyIdBytes.length;
   view.setUint8(offset, hashBytes.length); offset += 1;
   arr.set(hashBytes, offset); offset += hashBytes.length;
-
-  // Diffuse color
-  view.setFloat32(offset, diffuseColor.r, true); offset += 4;
-  view.setFloat32(offset, diffuseColor.g, true); offset += 4;
-  view.setFloat32(offset, diffuseColor.b, true); offset += 4;
-
-  // Specular color
-  view.setFloat32(offset, specularColor.r, true); offset += 4;
-  view.setFloat32(offset, specularColor.g, true); offset += 4;
-  view.setFloat32(offset, specularColor.b, true); offset += 4;
+  view.setUint8(offset, matHashBytes.length); offset += 1;
+  arr.set(matHashBytes, offset); offset += matHashBytes.length;
 
   return arr;
 }
@@ -269,21 +260,13 @@ export function decodeMeshRef(data: Uint8Array): MeshRefData {
   const geometryHash = decoder.decode(data.subarray(offset, offset + hashLength));
   offset += hashLength;
 
-  // Diffuse color
-  const dr = view.getFloat32(offset, true); offset += 4;
-  const dg = view.getFloat32(offset, true); offset += 4;
-  const db = view.getFloat32(offset, true); offset += 4;
-
-  // Specular color
-  const sr = view.getFloat32(offset, true); offset += 4;
-  const sg = view.getFloat32(offset, true); offset += 4;
-  const sb = view.getFloat32(offset, true); offset += 4;
+  const matHashLength = view.getUint8(offset); offset += 1;
+  const materialHash = decoder.decode(data.subarray(offset, offset + matHashLength));
 
   return {
     bodyId,
     geometryHash,
-    diffuseColor: { r: dr, g: dg, b: db },
-    specularColor: { r: sr, g: sg, b: sb },
+    materialHash,
   };
 }
 
@@ -310,4 +293,15 @@ export function readGeometryHashFromMeshRef(data: Uint8Array): string {
   const hashOffset = 2 + bodyIdLength;
   const hashLength = data[hashOffset];
   return decoder.decode(data.subarray(hashOffset + 1, hashOffset + 1 + hashLength));
+}
+
+/** Read just the material hash from a MESH_REF header (skip bodyId + geoHash). */
+export function readMaterialHashFromMeshRef(data: Uint8Array): string {
+  const decoder = new TextDecoder();
+  const bodyIdLength = data[1];
+  const geoHashOffset = 2 + bodyIdLength;
+  const geoHashLength = data[geoHashOffset];
+  const matHashOffset = geoHashOffset + 1 + geoHashLength;
+  const matHashLength = data[matHashOffset];
+  return decoder.decode(data.subarray(matHashOffset + 1, matHashOffset + 1 + matHashLength));
 }

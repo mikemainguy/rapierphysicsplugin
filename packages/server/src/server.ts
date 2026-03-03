@@ -9,6 +9,8 @@ import {
   OPCODE_MESH_BINARY,
   OPCODE_GEOMETRY_DEF,
   OPCODE_MESH_REF,
+  OPCODE_MATERIAL_DEF,
+  OPCODE_TEXTURE_DEF,
 } from '@rapierphysicsplugin/shared';
 import type { ClientMessage } from '@rapierphysicsplugin/shared';
 import { RoomManager } from './room.js';
@@ -91,6 +93,28 @@ export class PhysicsServer {
             const room = this.roomManager.getRoom(conn.roomId);
             if (room) {
               room.relayMeshRef(conn.id, buf);
+            }
+          }
+          return;
+        }
+
+        // Intercept material def — relay/store without full decode
+        if (buf[0] === OPCODE_MATERIAL_DEF) {
+          if (conn.roomId) {
+            const room = this.roomManager.getRoom(conn.roomId);
+            if (room) {
+              room.relayMaterialDef(conn.id, buf);
+            }
+          }
+          return;
+        }
+
+        // Intercept texture def — relay/store without full decode
+        if (buf[0] === OPCODE_TEXTURE_DEF) {
+          if (conn.roomId) {
+            const room = this.roomManager.getRoom(conn.roomId);
+            if (room) {
+              room.relayTextureDef(conn.id, buf);
             }
           }
           return;

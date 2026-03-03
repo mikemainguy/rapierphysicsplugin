@@ -15,6 +15,9 @@ import {
   readHashFromGeometryDef,
   readBodyIdFromMeshRef,
   readGeometryHashFromMeshRef,
+  readMaterialHashFromMeshRef,
+  readHashFromTextureDef,
+  readHashFromMaterialDef,
 } from '@rapierphysicsplugin/shared';
 import { PhysicsWorld } from './physics-world.js';
 import { SimulationLoop } from './simulation-loop.js';
@@ -37,6 +40,9 @@ export class Room {
   private geometryStore: Map<string, Uint8Array> = new Map();
   private meshRefStore: Map<string, Uint8Array> = new Map();
   private geometryRefCount: Map<string, Set<string>> = new Map();
+  private materialStore: Map<string, Uint8Array> = new Map();
+  private textureStore: Map<string, Uint8Array> = new Map();
+  private materialRefCount: Map<string, Set<string>> = new Map();
   private currentTick = 0;
   private ticksSinceLastBroadcast = 0;
   private pendingCollisionEvents: CollisionEventData[] = [];
@@ -86,7 +92,13 @@ export class Room {
       conn.send(meshData);
     }
 
-    // Send geometry defs before mesh refs (order matters for cache population)
+    // Late-joiner replay order: textures → materials → geometry defs → mesh refs
+    for (const [, texData] of this.textureStore) {
+      conn.send(texData);
+    }
+    for (const [, matData] of this.materialStore) {
+      conn.send(matData);
+    }
     for (const [, geomData] of this.geometryStore) {
       conn.send(geomData);
     }
@@ -130,14 +142,21 @@ export class Room {
     this.activeBodies.delete(bodyId);
     this.meshBinaryStore.delete(bodyId);
 
-    // Clean up geometry registry refs (keep geometry def for reuse)
+    // Clean up geometry + material registry refs (keep defs for reuse)
     const refData = this.meshRefStore.get(bodyId);
     if (refData) {
       const geoHash = readGeometryHashFromMeshRef(refData);
-      const refs = this.geometryRefCount.get(geoHash);
-      if (refs) {
-        refs.delete(bodyId);
+      const geoRefs = this.geometryRefCount.get(geoHash);
+      if (geoRefs) {
+        geoRefs.delete(bodyId);
       }
+
+      const matHash = readMaterialHashFromMeshRef(refData);
+      const matRefs = this.materialRefCount.get(matHash);
+      if (matRefs) {
+        matRefs.delete(bodyId);
+      }
+
       this.meshRefStore.delete(bodyId);
     }
 
@@ -186,6 +205,38 @@ export class Room {
     }
   }
 
+  relayTextureDef(senderId: string, data: Uint8Array): void {
+    const hash = readHashFromTextureDef(data);
+
+    // Store if new
+    if (!this.textureStore.has(hash)) {
+      this.textureStore.set(hash, new Uint8Array(data));
+    }
+
+    // Relay to all clients except sender
+    for (const [clientId, client] of this.clients) {
+      if (clientId !== senderId) {
+        client.send(data);
+      }
+    }
+  }
+
+  relayMaterialDef(senderId: string, data: Uint8Array): void {
+    const hash = readHashFromMaterialDef(data);
+
+    // Store if new
+    if (!this.materialStore.has(hash)) {
+      this.materialStore.set(hash, new Uint8Array(data));
+    }
+
+    // Relay to all clients except sender
+    for (const [clientId, client] of this.clients) {
+      if (clientId !== senderId) {
+        client.send(data);
+      }
+    }
+  }
+
   relayGeometryDef(senderId: string, data: Uint8Array): void {
     const hash = readHashFromGeometryDef(data);
 
@@ -205,17 +256,26 @@ export class Room {
   relayMeshRef(senderId: string, data: Uint8Array): void {
     const bodyId = readBodyIdFromMeshRef(data);
     const geoHash = readGeometryHashFromMeshRef(data);
+    const matHash = readMaterialHashFromMeshRef(data);
 
     // Always store + relay
     this.meshRefStore.set(bodyId, new Uint8Array(data));
 
-    // Track ref count
-    let refs = this.geometryRefCount.get(geoHash);
-    if (!refs) {
-      refs = new Set();
-      this.geometryRefCount.set(geoHash, refs);
+    // Track geometry ref count
+    let geoRefs = this.geometryRefCount.get(geoHash);
+    if (!geoRefs) {
+      geoRefs = new Set();
+      this.geometryRefCount.set(geoHash, geoRefs);
     }
-    refs.add(bodyId);
+    geoRefs.add(bodyId);
+
+    // Track material ref count
+    let matRefs = this.materialRefCount.get(matHash);
+    if (!matRefs) {
+      matRefs = new Set();
+      this.materialRefCount.set(matHash, matRefs);
+    }
+    matRefs.add(bodyId);
 
     // Relay to all clients except sender
     for (const [clientId, client] of this.clients) {
@@ -316,6 +376,9 @@ export class Room {
     this.geometryStore.clear();
     this.meshRefStore.clear();
     this.geometryRefCount.clear();
+    this.materialStore.clear();
+    this.textureStore.clear();
+    this.materialRefCount.clear();
     this.stateManager.clear();
     for (const [, buffer] of this.inputBuffers) {
       buffer.clear();
@@ -373,6 +436,9 @@ export class Room {
     this.geometryStore.clear();
     this.meshRefStore.clear();
     this.geometryRefCount.clear();
+    this.materialStore.clear();
+    this.textureStore.clear();
+    this.materialRefCount.clear();
     this.stateManager.clear();
     this.physicsWorld.destroy();
   }

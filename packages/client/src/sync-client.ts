@@ -21,10 +21,14 @@ import {
   decodeMeshBinary,
   OPCODE_GEOMETRY_DEF,
   OPCODE_MESH_REF,
+  OPCODE_MATERIAL_DEF,
+  OPCODE_TEXTURE_DEF,
   decodeGeometryDef,
   decodeMeshRef,
+  decodeMaterialDef,
+  decodeTextureDef,
 } from '@rapierphysicsplugin/shared';
-import type { MeshBinaryMessage, GeometryDefData, MeshRefData } from '@rapierphysicsplugin/shared';
+import type { MeshBinaryMessage, GeometryDefData, MeshRefData, MaterialDefData, TextureDefData } from '@rapierphysicsplugin/shared';
 import { ClockSyncClient } from './clock-sync.js';
 import { StateReconciler } from './state-reconciler.js';
 import { Interpolator } from './interpolator.js';
@@ -40,6 +44,8 @@ type ConstraintRemovedCallback = (constraintId: string) => void;
 type MeshBinaryCallback = (msg: MeshBinaryMessage) => void;
 type GeometryDefCallback = (data: GeometryDefData) => void;
 type MeshRefCallback = (data: MeshRefData) => void;
+type MaterialDefCallback = (data: MaterialDefData) => void;
+type TextureDefCallback = (data: TextureDefData) => void;
 
 export class PhysicsSyncClient {
   private ws: WebSocket | null = null;
@@ -69,6 +75,8 @@ export class PhysicsSyncClient {
   private meshBinaryCallbacks: MeshBinaryCallback[] = [];
   private geometryDefCallbacks: GeometryDefCallback[] = [];
   private meshRefCallbacks: MeshRefCallback[] = [];
+  private materialDefCallbacks: MaterialDefCallback[] = [];
+  private textureDefCallbacks: TextureDefCallback[] = [];
 
   private connectResolve: (() => void) | null = null;
   private connectReject: ((err: Error) => void) | null = null;
@@ -135,6 +143,24 @@ export class PhysicsSyncClient {
           if (buf[0] === OPCODE_MESH_REF) {
             const decoded = decodeMeshRef(buf);
             for (const cb of this.meshRefCallbacks) {
+              cb(decoded);
+            }
+            return;
+          }
+
+          // Intercept material def messages
+          if (buf[0] === OPCODE_MATERIAL_DEF) {
+            const decoded = decodeMaterialDef(buf);
+            for (const cb of this.materialDefCallbacks) {
+              cb(decoded);
+            }
+            return;
+          }
+
+          // Intercept texture def messages
+          if (buf[0] === OPCODE_TEXTURE_DEF) {
+            const decoded = decodeTextureDef(buf);
+            for (const cb of this.textureDefCallbacks) {
               cb(decoded);
             }
             return;
@@ -282,6 +308,14 @@ export class PhysicsSyncClient {
     this.meshRefCallbacks.push(callback);
   }
 
+  onMaterialDef(callback: MaterialDefCallback): void {
+    this.materialDefCallbacks.push(callback);
+  }
+
+  onTextureDef(callback: TextureDefCallback): void {
+    this.textureDefCallbacks.push(callback);
+  }
+
   /** Send pre-encoded binary mesh data directly over the WebSocket (no msgpackr wrapping). */
   sendMeshBinary(encoded: Uint8Array): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -300,6 +334,22 @@ export class PhysicsSyncClient {
 
   /** Send pre-encoded MESH_REF directly over the WebSocket. */
   sendMeshRef(encoded: Uint8Array): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this._bytesSent += encoded.byteLength;
+      this.ws.send(encoded);
+    }
+  }
+
+  /** Send pre-encoded MATERIAL_DEF directly over the WebSocket. */
+  sendMaterialDef(encoded: Uint8Array): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this._bytesSent += encoded.byteLength;
+      this.ws.send(encoded);
+    }
+  }
+
+  /** Send pre-encoded TEXTURE_DEF directly over the WebSocket. */
+  sendTextureDef(encoded: Uint8Array): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this._bytesSent += encoded.byteLength;
       this.ws.send(encoded);

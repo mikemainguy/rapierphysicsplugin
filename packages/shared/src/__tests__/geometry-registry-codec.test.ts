@@ -10,6 +10,7 @@ import {
   readHashFromGeometryDef,
   readBodyIdFromMeshRef,
   readGeometryHashFromMeshRef,
+  readMaterialHashFromMeshRef,
 } from '../index.js';
 
 // --- Test data helpers ---
@@ -139,35 +140,29 @@ describe('encodeGeometryDef / decodeGeometryDef', () => {
 // --- MESH_REF encode/decode ---
 
 describe('encodeMeshRef / decodeMeshRef', () => {
-  it('should round-trip body ID, hash, and colors', () => {
+  it('should round-trip body ID, geometry hash, and material hash', () => {
     const bodyId = 'body-123';
     const geoHash = '8-36-abcd1234';
-    const diffuse = { r: 0.9, g: 0.2, b: 0.2 };
-    const specular = { r: 0.3, g: 0.3, b: 0.3 };
+    const matHash = 'mat-deadbeef';
 
-    const encoded = encodeMeshRef(bodyId, geoHash, diffuse, specular);
+    const encoded = encodeMeshRef(bodyId, geoHash, matHash);
     const decoded = decodeMeshRef(encoded);
 
     expect(decoded.bodyId).toBe(bodyId);
     expect(decoded.geometryHash).toBe(geoHash);
-    expect(decoded.diffuseColor.r).toBeCloseTo(diffuse.r, 5);
-    expect(decoded.diffuseColor.g).toBeCloseTo(diffuse.g, 5);
-    expect(decoded.diffuseColor.b).toBeCloseTo(diffuse.b, 5);
-    expect(decoded.specularColor.r).toBeCloseTo(specular.r, 5);
-    expect(decoded.specularColor.g).toBeCloseTo(specular.g, 5);
-    expect(decoded.specularColor.b).toBeCloseTo(specular.b, 5);
+    expect(decoded.materialHash).toBe(matHash);
   });
 
   it('should have correct opcode byte', () => {
-    const encoded = encodeMeshRef('b', 'h', { r: 0, g: 0, b: 0 }, { r: 0, g: 0, b: 0 });
+    const encoded = encodeMeshRef('b', 'h', 'mat-00000000');
     expect(encoded[0]).toBe(OPCODE_MESH_REF);
     expect(encoded[0]).toBe(0x05);
   });
 
-  it('should produce small messages (~50 bytes)', () => {
-    const encoded = encodeMeshRef('body-abc', '8-36-deadbeef', { r: 0.5, g: 0.5, b: 0.5 }, { r: 0.3, g: 0.3, b: 0.3 });
-    // opcode(1) + bodyIdLen(1) + bodyId(8) + hashLen(1) + hash(14) + diffuse(12) + specular(12) = 49
-    expect(encoded.byteLength).toBeLessThan(60);
+  it('should produce small messages', () => {
+    const encoded = encodeMeshRef('body-abc', '8-36-deadbeef', 'mat-abcd1234');
+    // opcode(1) + bodyIdLen(1) + bodyId(8) + hashLen(1) + hash(14) + matHashLen(1) + matHash(12) = 38
+    expect(encoded.byteLength).toBeLessThan(50);
   });
 });
 
@@ -186,7 +181,7 @@ describe('readHashFromGeometryDef', () => {
 
 describe('readBodyIdFromMeshRef', () => {
   it('should read bodyId without full decode', () => {
-    const encoded = encodeMeshRef('my-body-42', '4-12-aabbccdd', { r: 1, g: 0, b: 0 }, { r: 0, g: 0, b: 0 });
+    const encoded = encodeMeshRef('my-body-42', '4-12-aabbccdd', 'mat-11223344');
     const bodyId = readBodyIdFromMeshRef(encoded);
     expect(bodyId).toBe('my-body-42');
   });
@@ -194,8 +189,16 @@ describe('readBodyIdFromMeshRef', () => {
 
 describe('readGeometryHashFromMeshRef', () => {
   it('should read geometry hash without full decode', () => {
-    const encoded = encodeMeshRef('body-x', '8-36-12345678', { r: 0, g: 1, b: 0 }, { r: 0, g: 0, b: 0 });
+    const encoded = encodeMeshRef('body-x', '8-36-12345678', 'mat-aabbccdd');
     const geoHash = readGeometryHashFromMeshRef(encoded);
     expect(geoHash).toBe('8-36-12345678');
+  });
+});
+
+describe('readMaterialHashFromMeshRef', () => {
+  it('should read material hash without full decode', () => {
+    const encoded = encodeMeshRef('body-x', '8-36-12345678', 'mat-aabbccdd');
+    const matHash = readMaterialHashFromMeshRef(encoded);
+    expect(matHash).toBe('mat-aabbccdd');
   });
 });

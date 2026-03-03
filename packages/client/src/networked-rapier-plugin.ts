@@ -11,12 +11,13 @@ import {
   PhysicsShape,
   VertexData,
   Mesh,
+  Texture,
 } from '@babylonjs/core';
 import type {
   PhysicsShapeParameters,
   PhysicsMaterial,
 } from '@babylonjs/core';
-import type { Scene, Nullable } from '@babylonjs/core';
+import type { Scene, Nullable, BaseTexture } from '@babylonjs/core';
 import type {
   BodyDescriptor,
   ShapeDescriptor,
@@ -35,8 +36,12 @@ import {
   computeGeometryHash,
   encodeGeometryDef,
   encodeMeshRef,
+  computeMaterialHash,
+  computeTextureHash,
+  encodeMaterialDef,
+  encodeTextureDef,
 } from '@rapierphysicsplugin/shared';
-import type { GeometryDefData, MeshRefData } from '@rapierphysicsplugin/shared';
+import type { GeometryDefData, MeshRefData, MaterialDefData, TextureDefData } from '@rapierphysicsplugin/shared';
 import { RapierPlugin } from './rapier-plugin.js';
 import { PhysicsSyncClient } from './sync-client.js';
 
@@ -97,6 +102,13 @@ export class NetworkedRapierPlugin extends RapierPlugin {
   private geometryCache: Map<string, GeometryDefData> = new Map();
   private sentGeometryHashes: Set<string> = new Set();
 
+  // Material & texture registry
+  private materialCache: Map<string, MaterialDefData> = new Map();
+  private textureCache: Map<string, TextureDefData> = new Map();
+  private sentMaterialHashes: Set<string> = new Set();
+  private sentTextureHashes: Set<string> = new Set();
+  private textureObjectUrls: Map<string, string> = new Map();
+
   // Collision event counter
   private collisionCount = 0;
 
@@ -128,6 +140,8 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     this.syncClient.onMeshBinary((msg) => this.handleMeshBinaryReceived(msg));
     this.syncClient.onGeometryDef((data) => this.handleGeometryDefReceived(data));
     this.syncClient.onMeshRef((data) => this.handleMeshRefReceived(data));
+    this.syncClient.onMaterialDef((data) => this.handleMaterialDefReceived(data));
+    this.syncClient.onTextureDef((data) => this.handleTextureDefReceived(data));
     this.syncClient.onSimulationStarted((freshSnapshot) => this.handleSimulationStarted(freshSnapshot));
     this.syncClient.onCollisionEvents((events) => {
       this.collisionCount += events.length;
@@ -365,6 +379,15 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     this.remoteBodies.clear();
     this.geometryCache.clear();
     this.sentGeometryHashes.clear();
+    this.materialCache.clear();
+    this.textureCache.clear();
+    this.sentMaterialHashes.clear();
+    this.sentTextureHashes.clear();
+    // Revoke object URLs to prevent memory leaks
+    for (const [, url] of this.textureObjectUrls) {
+      URL.revokeObjectURL(url);
+    }
+    this.textureObjectUrls.clear();
     this.collisionCount = 0;
 
     // Dispose all existing physics bodies and their meshes
@@ -479,12 +502,40 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     const colorsRaw = mesh.getVerticesData('color');
     const colors = colorsRaw ? new Float32Array(colorsRaw) : undefined;
 
+    // Extract full material properties
     let diffuseColor: { r: number; g: number; b: number } = { r: 0.5, g: 0.5, b: 0.5 };
     let specularColor: { r: number; g: number; b: number } = { r: 0.3, g: 0.3, b: 0.3 };
+    let emissiveColor: { r: number; g: number; b: number } = { r: 0, g: 0, b: 0 };
+    let ambientColor: { r: number; g: number; b: number } = { r: 0, g: 0, b: 0 };
+    let alpha = 1;
+    let specularPower = 64;
+    let diffuseTextureHash: string | undefined;
+    let normalTextureHash: string | undefined;
+    let specularTextureHash: string | undefined;
+    let emissiveTextureHash: string | undefined;
+
     const mat = mesh.material as StandardMaterial | null;
     if (mat) {
       diffuseColor = { r: mat.diffuseColor.r, g: mat.diffuseColor.g, b: mat.diffuseColor.b };
       specularColor = { r: mat.specularColor.r, g: mat.specularColor.g, b: mat.specularColor.b };
+      emissiveColor = { r: mat.emissiveColor.r, g: mat.emissiveColor.g, b: mat.emissiveColor.b };
+      ambientColor = { r: mat.ambientColor.r, g: mat.ambientColor.g, b: mat.ambientColor.b };
+      alpha = mat.alpha;
+      specularPower = mat.specularPower;
+
+      // Extract textures via _buffer (BabylonJS internal)
+      if (mat.diffuseTexture) {
+        diffuseTextureHash = this.extractAndSendTexture(mat.diffuseTexture);
+      }
+      if (mat.bumpTexture) {
+        normalTextureHash = this.extractAndSendTexture(mat.bumpTexture);
+      }
+      if (mat.specularTexture) {
+        specularTextureHash = this.extractAndSendTexture(mat.specularTexture);
+      }
+      if (mat.emissiveTexture) {
+        emissiveTextureHash = this.extractAndSendTexture(mat.emissiveTexture);
+      }
     }
 
     // Content-hash deduplication: send GEOMETRY_DEF only once per unique geometry
@@ -498,8 +549,28 @@ export class NetworkedRapierPlugin extends RapierPlugin {
       this.geometryCache.set(hash, { hash, positions, normals, uvs, colors, indices });
     }
 
-    // Always send MESH_REF (small ~50-byte message per body)
-    const refEncoded = encodeMeshRef(bodyId, hash, diffuseColor, specularColor);
+    // Compute material hash and send MATERIAL_DEF if new
+    const matHash = computeMaterialHash(
+      diffuseColor, specularColor, emissiveColor, ambientColor,
+      alpha, specularPower,
+      diffuseTextureHash, normalTextureHash, specularTextureHash, emissiveTextureHash,
+    );
+
+    if (!this.sentMaterialHashes.has(matHash)) {
+      const matDef: MaterialDefData = {
+        hash: matHash,
+        diffuseColor, specularColor, emissiveColor, ambientColor,
+        alpha, specularPower,
+        diffuseTextureHash, normalTextureHash, specularTextureHash, emissiveTextureHash,
+      };
+      const matEncoded = encodeMaterialDef(matDef);
+      this.syncClient.sendMaterialDef(matEncoded);
+      this.sentMaterialHashes.add(matHash);
+      this.materialCache.set(matHash, matDef);
+    }
+
+    // Always send MESH_REF (small message per body)
+    const refEncoded = encodeMeshRef(bodyId, hash, matHash);
     this.syncClient.sendMeshRef(refEncoded);
   }
 
@@ -568,13 +639,88 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     vertexData.indices = geom.indices;
     vertexData.applyToMesh(mesh);
 
-    // Apply material colors from the MESH_REF
+    // Apply material from the cached MATERIAL_DEF
+    const matDef = this.materialCache.get(data.materialHash);
     const oldMat = mesh.material;
     if (oldMat) oldMat.dispose();
     const mat = new StandardMaterial(`${data.bodyId}Mat_ref`, scene);
-    mat.diffuseColor = new Color3(data.diffuseColor.r, data.diffuseColor.g, data.diffuseColor.b);
-    mat.specularColor = new Color3(data.specularColor.r, data.specularColor.g, data.specularColor.b);
+
+    if (matDef) {
+      mat.diffuseColor = new Color3(matDef.diffuseColor.r, matDef.diffuseColor.g, matDef.diffuseColor.b);
+      mat.specularColor = new Color3(matDef.specularColor.r, matDef.specularColor.g, matDef.specularColor.b);
+      mat.emissiveColor = new Color3(matDef.emissiveColor.r, matDef.emissiveColor.g, matDef.emissiveColor.b);
+      mat.ambientColor = new Color3(matDef.ambientColor.r, matDef.ambientColor.g, matDef.ambientColor.b);
+      mat.alpha = matDef.alpha;
+      mat.specularPower = matDef.specularPower;
+
+      // Apply textures from cache
+      if (matDef.diffuseTextureHash) {
+        mat.diffuseTexture = this.createTextureFromCache(matDef.diffuseTextureHash, scene);
+      }
+      if (matDef.normalTextureHash) {
+        mat.bumpTexture = this.createTextureFromCache(matDef.normalTextureHash, scene);
+      }
+      if (matDef.specularTextureHash) {
+        mat.specularTexture = this.createTextureFromCache(matDef.specularTextureHash, scene);
+      }
+      if (matDef.emissiveTextureHash) {
+        mat.emissiveTexture = this.createTextureFromCache(matDef.emissiveTextureHash, scene);
+      }
+    } else {
+      // Fallback: no material def found, use defaults
+      mat.diffuseColor = new Color3(0.5, 0.5, 0.5);
+      mat.specularColor = new Color3(0.3, 0.3, 0.3);
+    }
+
     mesh.material = mat;
+  }
+
+  private handleMaterialDefReceived(data: MaterialDefData): void {
+    this.materialCache.set(data.hash, data);
+    this.sentMaterialHashes.add(data.hash);
+  }
+
+  private handleTextureDefReceived(data: TextureDefData): void {
+    this.textureCache.set(data.hash, data);
+    this.sentTextureHashes.add(data.hash);
+  }
+
+  private extractAndSendTexture(texture: BaseTexture): string | undefined {
+    try {
+      // Access BabylonJS internal _buffer for original image bytes
+      const buffer = (texture as unknown as { _buffer: ArrayBuffer | null })._buffer;
+      if (!buffer) return undefined;
+
+      const imageData = new Uint8Array(buffer);
+      const texHash = computeTextureHash(imageData);
+
+      if (!this.sentTextureHashes.has(texHash)) {
+        const encoded = encodeTextureDef(texHash, imageData);
+        this.syncClient.sendTextureDef(encoded);
+        this.sentTextureHashes.add(texHash);
+        this.textureCache.set(texHash, { hash: texHash, imageData });
+      }
+
+      return texHash;
+    } catch {
+      // Gracefully skip textures that can't be extracted
+      return undefined;
+    }
+  }
+
+  private createTextureFromCache(hash: string, scene: Scene): Texture | null {
+    const texData = this.textureCache.get(hash);
+    if (!texData) return null;
+
+    // Reuse existing object URL or create a new one
+    let url = this.textureObjectUrls.get(hash);
+    if (!url) {
+      const blob = new Blob([new Uint8Array(texData.imageData)]);
+      url = URL.createObjectURL(blob);
+      this.textureObjectUrls.set(hash, url);
+    }
+
+    return new Texture(url, scene);
   }
 
   // --- Mesh creation for remote bodies ---

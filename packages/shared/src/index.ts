@@ -6,4 +6,5 @@ export * from './serialization.js';
 export * from './binary-state-codec.js';
 export * from './binary-mesh-codec.js';
 export * from './geometry-registry-codec.js';
+export * from './material-texture-codec.js';
 export * from './rapier-loader.js';
