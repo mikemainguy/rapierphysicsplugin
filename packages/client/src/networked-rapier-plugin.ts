@@ -122,6 +122,18 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     this.syncClient = new PhysicsSyncClient();
   }
 
+  static async createAsync(
+    rapier: typeof RAPIER,
+    gravity: Vector3,
+    config: NetworkedRapierPluginConfig,
+    scene: Scene,
+  ): Promise<{ plugin: NetworkedRapierPlugin; snapshot: RoomSnapshot }> {
+    const plugin = new NetworkedRapierPlugin(rapier, gravity, config);
+    scene.enablePhysics(gravity, plugin);
+    const snapshot = await plugin.connect(scene);
+    return { plugin, snapshot };
+  }
+
   /**
    * Connect to the physics server and join the configured room.
    * Optionally pass the scene for remote body mesh creation.
@@ -845,6 +857,51 @@ export class NetworkedRapierPlugin extends RapierPlugin {
       case 'kinematic': return PhysicsMotionType.ANIMATED;
       default: return PhysicsMotionType.DYNAMIC;
     }
+  }
+
+  // --- Babylon.js physics API overrides (forward to server) ---
+
+  private vec3ToPlain(v: Vector3): { x: number; y: number; z: number } {
+    return { x: v.x, y: v.y, z: v.z };
+  }
+
+  applyForce(body: PhysicsBody, force: Vector3, location: Vector3, _instanceIndex?: number): void {
+    const bodyId = this.bodyToId.get(body);
+    if (!bodyId) return;
+    this.sendInput([{ type: 'applyForce', bodyId, data: { force: this.vec3ToPlain(force), point: this.vec3ToPlain(location) } }]);
+  }
+
+  applyImpulse(body: PhysicsBody, impulse: Vector3, location: Vector3, _instanceIndex?: number): void {
+    const bodyId = this.bodyToId.get(body);
+    if (!bodyId) return;
+    this.sendInput([{ type: 'applyImpulse', bodyId, data: { impulse: this.vec3ToPlain(impulse), point: this.vec3ToPlain(location) } }]);
+  }
+
+  applyAngularImpulse(body: PhysicsBody, angularImpulse: Vector3, _instanceIndex?: number): void {
+    const bodyId = this.bodyToId.get(body);
+    if (!bodyId) return;
+    this.sendInput([{ type: 'applyAngularImpulse', bodyId, data: { angImpulse: this.vec3ToPlain(angularImpulse) } }]);
+  }
+
+  setLinearVelocity(body: PhysicsBody, linVel: Vector3, _instanceIndex?: number): void {
+    const bodyId = this.bodyToId.get(body);
+    if (!bodyId) return;
+    this.sendInput([{ type: 'setVelocity', bodyId, data: { linVel: this.vec3ToPlain(linVel) } }]);
+  }
+
+  setAngularVelocity(body: PhysicsBody, angVel: Vector3, _instanceIndex?: number): void {
+    const bodyId = this.bodyToId.get(body);
+    if (!bodyId) return;
+    this.sendInput([{ type: 'setAngularVelocity', bodyId, data: { angVel: this.vec3ToPlain(angVel) } }]);
+  }
+
+  setTargetTransform(body: PhysicsBody, position: Vector3, rotation: Quaternion, _instanceIndex?: number): void {
+    const bodyId = this.bodyToId.get(body);
+    if (!bodyId) return;
+    this.sendInput([
+      { type: 'setPosition', bodyId, data: { position: this.vec3ToPlain(position) } },
+      { type: 'setRotation', bodyId, data: { rotation: { x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w } } },
+    ]);
   }
 
   // --- Proxy methods for sync client functionality ---

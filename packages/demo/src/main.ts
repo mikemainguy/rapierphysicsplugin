@@ -39,17 +39,16 @@ async function main() {
   light.intensity = 0.9;
 
   // 3. Create NetworkedRapierPlugin and connect
-  const plugin = new NetworkedRapierPlugin(RAPIER, gravity, {
-    serverUrl: 'wss://rapier-server.flatearthdefense.com',
-    roomId: 'demo',
-  });
-
   const debugEl = document.getElementById('debug')!;
 
+  let plugin: NetworkedRapierPlugin;
   try {
     debugEl.textContent = 'Connecting...';
-    scene.enablePhysics(gravity, plugin);
-    await plugin.connect(scene);
+    ({ plugin } = await NetworkedRapierPlugin.createAsync(
+      RAPIER, gravity,
+      { serverUrl: 'wss://rapier-server.flatearthdefense.com', roomId: 'demo' },
+      scene,
+    ));
     debugEl.textContent = 'Connected.';
   } catch {
     debugEl.textContent = 'Failed to connect to server';
@@ -140,21 +139,14 @@ async function main() {
     }
   });
 
-  // 7. Click to apply impulse
+  // 7. Click to apply impulse (uses standard Babylon.js physics API)
   scene.onPointerDown = (_evt, pickResult) => {
     if (pickResult?.hit && pickResult.pickedMesh) {
       const mesh = pickResult.pickedMesh as Mesh;
       const bodyId = mesh.metadata?.bodyId as string | undefined;
-      if (bodyId && bodyId !== 'ground') {
-        const point = pickResult.pickedPoint;
-        plugin.sendInput([{
-          type: 'applyImpulse',
-          bodyId,
-          data: {
-            impulse: { x: 0, y: 8, z: 0 },
-            point: point ? { x: point.x, y: point.y, z: point.z } : undefined,
-          },
-        }]);
+      if (bodyId && bodyId !== 'ground' && mesh.physicsBody) {
+        const point = pickResult.pickedPoint ?? mesh.position;
+        mesh.physicsBody.applyImpulse(new Vector3(0, 8, 0), point);
       }
     }
   };
