@@ -9,6 +9,7 @@ export default defineConfig({
     dedupe: ['@babylonjs/core', '@dimforge/rapier3d-compat'],
   },
   optimizeDeps: {
-    include: ['@babylonjs/core', '@dimforge/rapier3d-compat'],
+    exclude: ['@babylonjs/core'],
+    include: ['@dimforge/rapier3d-compat'],
   },
 });

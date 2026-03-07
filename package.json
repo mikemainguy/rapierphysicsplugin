@@ -2,11 +2,12 @@
   "name": "rapierphysicsplugin",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "yarn@4.13.0",
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w packages/shared && npm run build -w packages/client -w packages/server -w packages/demo",
+    "build": "yarn workspaces foreach -At run build",
     "test": "vitest run",
     "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist packages/*/*.tsbuildinfo"
   },
