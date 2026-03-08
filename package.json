@@ -1,6 +1,6 @@
 {
   "name": "rapierphysicsplugin",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "packageManager": "yarn@4.13.0",
   "workspaces": [

@@ -15,7 +15,7 @@ npm install @rapierphysicsplugin/client @rapierphysicsplugin/shared
 ## Quick Start
 
 ```ts
-import { Engine, Scene, Vector3, MeshBuilder, PhysicsAggregate, PhysicsShapeType } from '@babylonjs/core';
+import { Engine, Scene, Vector3, MeshBuilder, PhysicsAggregate, PhysicsShapeType, BallAndSocketConstraint } from '@babylonjs/core';
 import { NetworkedRapierPlugin } from '@rapierphysicsplugin/client';
 import { loadRapier, detectSIMDSupport, ComputeBackend } from '@rapierphysicsplugin/shared';
 
@@ -43,14 +43,24 @@ new PhysicsAggregate(box, PhysicsShapeType.BOX, { mass: 1, friction: 0.5, restit
 // The plugin automatically syncs bodies with the server.
 // Remote clients' bodies appear in your scene automatically.
 
-// 5. Send input (e.g., apply impulse on click)
-plugin.sendInput([{
-  type: 'applyImpulse',
-  bodyId: box.metadata.bodyId,
-  data: { impulse: { x: 0, y: 10, z: 0 } },
-}]);
+// 5. Apply forces/impulses — use standard Babylon.js PhysicsBody API
+box.physicsBody.applyImpulse(new Vector3(0, 10, 0), box.position);
 
-// 6. Listen for events
+// 6. Add constraints — standard Babylon.js constraint API
+const anchor = MeshBuilder.CreateBox('anchor', { size: 1 }, scene);
+anchor.position.set(0, 8, 0);
+const anchorAgg = new PhysicsAggregate(anchor, PhysicsShapeType.BOX, { mass: 0 }, scene);
+
+const constraint = new BallAndSocketConstraint(
+  new Vector3(0, 0, 0),   // pivot on anchor (center)
+  new Vector3(0, 3, 0),   // pivot on box (3 units above its center)
+  new Vector3(0, 1, 0),
+  new Vector3(0, 1, 0),
+  scene,
+);
+anchorAgg.body.addConstraint(box.physicsBody, constraint);
+
+// 7. Listen for events
 plugin.onStateUpdate((state) => {
   console.log(`Tick ${state.tick}, ${state.bodies.length} bodies updated`);
 });
@@ -91,15 +101,33 @@ await plugin.connect(scene);
 - `PhysicsShapeType.CAPSULE`
 - `PhysicsShapeType.MESH`
 
-## Input Actions
+## Physics Interactions
 
-Send physics commands to the server via `plugin.sendInput()`:
+Use standard Babylon.js `PhysicsBody` methods — the plugin intercepts them and forwards to the server automatically:
+
+```ts
+// Apply impulse
+body.physicsBody.applyImpulse(new Vector3(0, 10, 0), point);
+
+// Apply force
+body.physicsBody.applyForce(new Vector3(0, 50, 0), point);
+
+// Set velocity
+body.physicsBody.setLinearVelocity(new Vector3(5, 0, 0));
+body.physicsBody.setAngularVelocity(new Vector3(0, 1, 0));
+
+// Constraints
+anchorBody.addConstraint(childBody, constraint);
+```
+
+For advanced use, `plugin.sendInput()` is also available:
 
 | Action | Description |
 |--------|-------------|
 | `applyForce` | Apply continuous force to a body |
 | `applyImpulse` | Apply instantaneous impulse (optionally at a point) |
-| `setLinearVelocity` | Set a body's linear velocity |
+| `applyAngularImpulse` | Apply angular impulse (torque) |
+| `setVelocity` | Set a body's linear velocity |
 | `setAngularVelocity` | Set a body's angular velocity |
 | `setPosition` | Teleport a body to a position |
 
@@ -143,3 +171,6 @@ const offset = clockSync.getClockOffset();
 - `@babylonjs/core` (peer) — Babylon.js engine
 - `@dimforge/rapier3d-compat` — Rapier WASM physics
 - `@rapierphysicsplugin/shared` — types and serialization
+
+### Demo Code On Github
+  https://github.com/mikemainguy/rapierphysicsplugin/tree/main/packages/demo
