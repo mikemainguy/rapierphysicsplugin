@@ -92,6 +92,7 @@ export interface RoomSnapshot {
 export type InputActionType =
   | 'applyForce'
   | 'applyImpulse'
+  | 'applyAngularImpulse'
   | 'setVelocity'
   | 'setAngularVelocity'
   | 'setPosition'
@@ -103,6 +104,7 @@ export interface InputAction {
   data: {
     force?: Vec3;
     impulse?: Vec3;
+    angImpulse?: Vec3;
     linVel?: Vec3;
     angVel?: Vec3;
     position?: Vec3;

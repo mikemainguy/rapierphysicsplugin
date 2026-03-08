@@ -201,6 +201,17 @@ export class PhysicsWorld {
           this.setBodyVelocity(action.bodyId, action.data.linVel, action.data.angVel);
         }
         break;
+      case 'applyAngularImpulse':
+        if (action.data.angImpulse) {
+          const body = this.bodyMap.get(action.bodyId);
+          if (body) {
+            body.applyTorqueImpulse(
+              new this.rapier.Vector3(action.data.angImpulse.x, action.data.angImpulse.y, action.data.angImpulse.z),
+              true
+            );
+          }
+        }
+        break;
       case 'setAngularVelocity':
         if (action.data.angVel) {
           const body = this.bodyMap.get(action.bodyId);

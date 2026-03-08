@@ -1,6 +1,6 @@
 {
   "name": "rapierphysicsplugin",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "packageManager": "yarn@4.13.0",
   "workspaces": [
@@ -9,7 +9,9 @@
   "scripts": {
     "build": "yarn workspaces foreach -At run build",
     "test": "vitest run",
-    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist packages/*/*.tsbuildinfo"
+    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist packages/*/*.tsbuildinfo",
+    "version:sync": "node -e \"const v=require('./package.json').version;const fs=require('fs');['shared','client','server'].forEach(p=>{const f='packages/'+p+'/package.json';const j=JSON.parse(fs.readFileSync(f));j.version=v;fs.writeFileSync(f,JSON.stringify(j,null,2)+'\\n')})\"",
+    "publish:all": "yarn version:sync && yarn build && yarn workspaces foreach -A --no-private npm publish --access public"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
