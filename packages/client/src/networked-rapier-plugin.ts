@@ -16,6 +16,7 @@ import {
 import type {
   PhysicsShapeParameters,
   PhysicsMaterial,
+  PhysicsConstraint,
 } from '@babylonjs/core';
 import type { Scene, Nullable, BaseTexture } from '@babylonjs/core';
 import type {
@@ -44,6 +45,7 @@ import {
 import type { GeometryDefData, MeshRefData, MaterialDefData, TextureDefData } from '@rapierphysicsplugin/shared';
 import { RapierPlugin } from './rapier-plugin.js';
 import { PhysicsSyncClient } from './sync-client.js';
+import { buildConstraintDescriptor } from './rapier-constraint-ops.js';
 
 // Colors for different shape types (matches demo)
 const shapeColors: Record<string, Color3> = {
@@ -856,6 +858,30 @@ export class NetworkedRapierPlugin extends RapierPlugin {
       case 'static': return PhysicsMotionType.STATIC;
       case 'kinematic': return PhysicsMotionType.ANIMATED;
       default: return PhysicsMotionType.DYNAMIC;
+    }
+  }
+
+  // --- Constraint override (forward to server) ---
+
+  addConstraint(body: PhysicsBody, childBody: PhysicsBody, constraint: PhysicsConstraint, _instanceIndex?: number, _childInstanceIndex?: number): void {
+    // Create locally so Rapier state stays consistent
+    super.addConstraint(body, childBody, constraint);
+
+    const bodyIdA = this.bodyToId.get(body);
+    const bodyIdB = this.bodyToId.get(childBody);
+    if (bodyIdA && bodyIdB) {
+      const descriptor = buildConstraintDescriptor(constraint);
+      descriptor.id = `${bodyIdA}_${bodyIdB}_${crypto.randomUUID().slice(0, 8)}`;
+      descriptor.bodyIdA = bodyIdA;
+      descriptor.bodyIdB = bodyIdB;
+      // Defer to ensure body descriptors (sent eagerly from setMaterial
+      // or via microtask fallback) are dispatched first
+      queueMicrotask(() => {
+        queueMicrotask(() => {
+          console.log('[constraint] sending', descriptor.type, descriptor.id, descriptor.bodyIdA, descriptor.bodyIdB);
+          this.syncClient.addConstraint(descriptor);
+        });
+      });
     }
   }
 

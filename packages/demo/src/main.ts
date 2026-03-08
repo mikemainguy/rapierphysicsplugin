@@ -10,6 +10,7 @@ import {
   PhysicsAggregate,
   PhysicsShapeType,
   Mesh,
+  BallAndSocketConstraint,
 } from '@babylonjs/core';
 import { NetworkedRapierPlugin } from '@rapierphysicsplugin/client';
 import { loadRapier, detectSIMDSupport, ComputeBackend } from '@rapierphysicsplugin/shared';
@@ -67,7 +68,50 @@ async function main() {
     ground.position.set(0, -0.5, 0);
     new PhysicsAggregate(ground, PhysicsShapeType.BOX, { mass: 0, friction: 0.8, restitution: 0.3 }, scene);
   }
+  let constraintCleanup: (() => void) | null = null;
+
+  function createConstraints() {
+    // Clean up existing constraint bodies
+    if (constraintCleanup) {
+      constraintCleanup();
+      constraintCleanup = null;
+    }
+
+    const anchorMesh = MeshBuilder.CreateBox('static', { width: 1, height: 1, depth: 1 }, scene);
+    const anchorMat = new StandardMaterial('staticMat', scene);
+    anchorMat.diffuseColor = new Color3(0.4, 0.4, 1);
+    anchorMat.specularColor = new Color3(0.3, 0.3, 1);
+    anchorMesh.material = anchorMat;
+    anchorMesh.position.set(0, 5, 0);
+    const anchorAgg = new PhysicsAggregate(anchorMesh, PhysicsShapeType.BOX, { mass: 0, friction: 0.8, restitution: 0.3 }, scene);
+
+    const swingMesh = MeshBuilder.CreateBox('constrained', { width: 1, height: 1, depth: 1 }, scene);
+    const swingMat = new StandardMaterial('constrainedMat', scene);
+    swingMat.diffuseColor = new Color3(1, 0.4, 0.4);
+    swingMat.specularColor = new Color3(0.3, 0.3, 1);
+    swingMesh.material = swingMat;
+    swingMesh.position.set(3, 5, 0);
+    const swingAgg = new PhysicsAggregate(swingMesh, PhysicsShapeType.BOX, { mass: 1, friction: 0.5, restitution: 0.3 }, scene);
+
+    const constraint = new BallAndSocketConstraint(
+      new Vector3(0, 0, 0),
+      new Vector3(-3, 0, 0),
+      new Vector3(0, 1, 0),
+      new Vector3(0, 1, 0),
+      scene,
+    );
+    anchorAgg.body.addConstraint(swingAgg.body, constraint);
+
+    constraintCleanup = () => {
+      constraint.dispose();
+      anchorAgg.dispose();
+      anchorMesh.dispose();
+      swingAgg.dispose();
+      swingMesh.dispose();
+    };
+  }
   createGround();
+  createConstraints();
 
   // 5. Start/Reset button
   const simButton = document.getElementById('simButton') as HTMLButtonElement;
@@ -79,6 +123,7 @@ async function main() {
 
   plugin.onSimulationReset(() => {
     createGround();
+    createConstraints();
     simButton.textContent = 'Reset';
   });
 
