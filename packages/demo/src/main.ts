@@ -48,7 +48,7 @@ async function main() {
     debugEl.textContent = 'Connecting...';
     ({ plugin, snapshot } = await NetworkedRapierPlugin.createAsync(
       RAPIER, gravity,
-      { serverUrl: 'wss://rapier-server.flatearthdefense.com', roomId: 'demo' },
+      { serverUrl: 'wss://rapier-server.flatearthdefense.com', roomId: 'demo', renderDelayMs: 300, clockSyncIntervalMs: 2000 },
       scene,
     ));
     debugEl.textContent = 'Connected.';

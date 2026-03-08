@@ -29,11 +29,13 @@ export interface InterpolatorStats {
 export class Interpolator {
   private buffers: Map<string, Snapshot[]> = new Map();
   private renderDelay: number;
+  private bufferSize: number;
   private _stats: InterpolatorStats = this._emptyStats();
 
-  constructor(renderDelayMs?: number) {
+  constructor(renderDelayMs?: number, bufferSize?: number) {
     // Default render delay: ~4x broadcast interval to absorb network jitter
     this.renderDelay = renderDelayMs ?? (4 * (1000 / BROADCAST_RATE));
+    this.bufferSize = bufferSize ?? INTERPOLATION_BUFFER_SIZE;
   }
 
   private _emptyStats(): InterpolatorStats {
@@ -77,7 +79,7 @@ export class Interpolator {
     buffer.push({ timestamp, state });
 
     // Keep buffer limited
-    while (buffer.length > INTERPOLATION_BUFFER_SIZE + 1) {
+    while (buffer.length > this.bufferSize + 1) {
       buffer.shift();
     }
   }

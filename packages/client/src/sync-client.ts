@@ -97,10 +97,22 @@ export class PhysicsSyncClient {
   private joinResolve: ((snapshot: RoomSnapshot) => void) | null = null;
   private createResolve: (() => void) | null = null;
 
-  constructor() {
-    this.clockSync = new ClockSyncClient();
-    const interpolator = new Interpolator();
-    this.reconciler = new StateReconciler(interpolator);
+  constructor(options?: {
+    renderDelayMs?: number;
+    interpolationBufferSize?: number;
+    clockSyncIntervalMs?: number;
+    clockSyncSamples?: number;
+    reconciliationThreshold?: number;
+  }) {
+    this.clockSync = new ClockSyncClient(
+      options?.clockSyncIntervalMs,
+      options?.clockSyncSamples,
+    );
+    const interpolator = new Interpolator(
+      options?.renderDelayMs,
+      options?.interpolationBufferSize,
+    );
+    this.reconciler = new StateReconciler(interpolator, options?.reconciliationThreshold);
     this.inputManager = new InputManager();
   }
 

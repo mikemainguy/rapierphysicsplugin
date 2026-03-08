@@ -61,9 +61,74 @@ const shapeColors: Record<string, Color3> = {
 const staticColor = new Color3(0.4, 0.4, 0.45);
 
 export interface NetworkedRapierPluginConfig {
+  /** WebSocket URL of the physics server (e.g. `"wss://example.com"`). */
   serverUrl: string;
+
+  /** Room identifier to join on the server. */
   roomId: string;
+
+  /** WASM backend selection (compat vs SIMD). */
   compute?: ComputeConfig;
+
+  /**
+   * How far behind real-time the renderer draws, in milliseconds.
+   *
+   * A higher value gives the interpolation buffer more headroom to absorb
+   * network jitter, producing smoother motion at the cost of additional
+   * visual latency. A lower value reduces latency but increases the chance
+   * of extrapolation (which can cause small position/rotation jumps).
+   *
+   * @default `4 * (1000 / BROADCAST_RATE)` — ~133 ms at 30 Hz broadcast
+   */
+  renderDelayMs?: number;
+
+  /**
+   * Maximum number of state snapshots kept per body in the interpolation buffer.
+   *
+   * More snapshots provide a wider window for interpolation, which helps on
+   * unstable connections. Fewer snapshots reduce memory usage. The interpolator
+   * always needs at least **two** snapshots to interpolate; any excess is kept
+   * as look-back history.
+   *
+   * @default 3
+   */
+  interpolationBufferSize?: number;
+
+  /**
+   * How often the client sends clock-sync pings to the server, in milliseconds.
+   *
+   * Shorter intervals converge on an accurate clock offset faster and adapt
+   * more quickly to network changes, but generate more traffic. Longer
+   * intervals are lighter on bandwidth at the cost of slower adaptation.
+   *
+   * @default 3000
+   */
+  clockSyncIntervalMs?: number;
+
+  /**
+   * Number of clock-sync round-trip samples kept for the rolling average.
+   *
+   * A larger window produces a more stable (less noisy) clock offset estimate,
+   * but reacts more slowly to sudden network changes. A smaller window adapts
+   * faster but is more susceptible to outlier measurements.
+   *
+   * @default 10
+   */
+  clockSyncSamples?: number;
+
+  /**
+   * Position error threshold (in meters) before a snap-correction is applied
+   * to a locally-predicted body.
+   *
+   * When the server's authoritative position differs from the client's
+   * predicted position by more than this distance, the client corrects
+   * toward the server state. A higher value is more tolerant of small
+   * discrepancies; a lower value keeps the client tightly in sync but may
+   * cause visible corrections on lossy connections.
+   *
+   * @default 0.1
+   */
+  reconciliationThreshold?: number;
 }
 
 interface PendingBodyInfo {
@@ -126,7 +191,13 @@ export class NetworkedRapierPlugin extends RapierPlugin {
   constructor(rapier: typeof RAPIER, gravity: Vector3, config: NetworkedRapierPluginConfig) {
     super(rapier, gravity);
     this.config = config;
-    this.syncClient = new PhysicsSyncClient();
+    this.syncClient = new PhysicsSyncClient({
+      renderDelayMs: config.renderDelayMs,
+      interpolationBufferSize: config.interpolationBufferSize,
+      clockSyncIntervalMs: config.clockSyncIntervalMs,
+      clockSyncSamples: config.clockSyncSamples,
+      reconciliationThreshold: config.reconciliationThreshold,
+    });
   }
 
   static async createAsync(

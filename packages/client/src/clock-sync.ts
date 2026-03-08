@@ -13,11 +13,18 @@ export class ClockSyncClient {
   private offsetSamples: number[] = [];
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private sendFn: ((data: Uint8Array) => void) | null = null;
+  private syncIntervalMs: number;
+  private maxSamples: number;
+
+  constructor(syncIntervalMs?: number, maxSamples?: number) {
+    this.syncIntervalMs = syncIntervalMs ?? CLOCK_SYNC_INTERVAL_MS;
+    this.maxSamples = maxSamples ?? CLOCK_SYNC_SAMPLES;
+  }
 
   start(sendFn: (data: Uint8Array) => void): void {
     this.sendFn = sendFn;
     this.sendSyncRequest();
-    this.intervalId = setInterval(() => this.sendSyncRequest(), CLOCK_SYNC_INTERVAL_MS);
+    this.intervalId = setInterval(() => this.sendSyncRequest(), this.syncIntervalMs);
   }
 
   stop(): void {
@@ -42,12 +49,12 @@ export class ClockSyncClient {
     const offset = message.serverTimestamp - message.clientTimestamp - rtt / 2;
 
     this.rttSamples.push(rtt);
-    if (this.rttSamples.length > CLOCK_SYNC_SAMPLES) {
+    if (this.rttSamples.length > this.maxSamples) {
       this.rttSamples.shift();
     }
 
     this.offsetSamples.push(offset);
-    if (this.offsetSamples.length > CLOCK_SYNC_SAMPLES) {
+    if (this.offsetSamples.length > this.maxSamples) {
       this.offsetSamples.shift();
     }
   }

@@ -18,9 +18,15 @@ export class StateReconciler {
   private localBodyIds: Set<string> = new Set();
   private pendingInputs: ClientInput[] = [];
   private lastServerTick = 0;
+  private _reconciliationThreshold: number;
 
-  constructor(interpolator?: Interpolator) {
+  constructor(interpolator?: Interpolator, reconciliationThreshold?: number) {
     this.interpolator = interpolator ?? new Interpolator();
+    this._reconciliationThreshold = reconciliationThreshold ?? RECONCILIATION_THRESHOLD;
+  }
+
+  get reconciliationThreshold(): number {
+    return this._reconciliationThreshold;
   }
 
   setLocalBodies(bodyIds: string[]): void {
@@ -89,12 +95,13 @@ export class StateReconciler {
   }
 }
 
-export function needsCorrection(predicted: BodyState, authoritative: BodyState): boolean {
+export function needsCorrection(predicted: BodyState, authoritative: BodyState, threshold?: number): boolean {
+  const t = threshold ?? RECONCILIATION_THRESHOLD;
   const dx = predicted.position.x - authoritative.position.x;
   const dy = predicted.position.y - authoritative.position.y;
   const dz = predicted.position.z - authoritative.position.z;
   const distSq = dx * dx + dy * dy + dz * dz;
-  return distSq > RECONCILIATION_THRESHOLD * RECONCILIATION_THRESHOLD;
+  return distSq > t * t;
 }
 
 export function blendBodyState(current: BodyState, target: BodyState): BodyState {
