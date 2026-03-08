@@ -104,7 +104,7 @@ async function main() {
       const id = `box-${ts}-${i}`;
       const mesh = MeshBuilder.CreateBox(id, { width: 1, height: 1, depth: 1 }, scene);
       const mat = new StandardMaterial(`${id}Mat`, scene);
-      mat.diffuseColor = new Color3(0.9, 0.2, 0.2);
+      mat.diffuseColor = new Color3(Math.random(), Math.random(), 0.2);
       mat.specularColor = new Color3(0.3, 0.3, 0.3);
       mesh.material = mat;
       mesh.position = randomPos();
@@ -143,10 +143,9 @@ async function main() {
   scene.onPointerDown = (_evt, pickResult) => {
     if (pickResult?.hit && pickResult.pickedMesh) {
       const mesh = pickResult.pickedMesh as Mesh;
-      const bodyId = mesh.metadata?.bodyId as string | undefined;
-      if (bodyId && bodyId !== 'ground' && mesh.physicsBody) {
+      if (mesh.physicsBody) {
         const point = pickResult.pickedPoint ?? mesh.position;
-        mesh.physicsBody.applyImpulse(new Vector3(0, 8, 0), point);
+        mesh.physicsBody.applyImpulse(new Vector3(0, 4, 0), point);
       }
     }
   };
