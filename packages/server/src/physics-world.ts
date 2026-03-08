@@ -7,6 +7,13 @@ import type {
   Vec3,
   Quat,
   InputAction,
+  ShapeDescriptor,
+  ShapeCastRequest,
+  ShapeCastResponse,
+  ShapeProximityRequest,
+  ShapeProximityResponse,
+  PointProximityRequest,
+  PointProximityResponse,
 } from '@rapierphysicsplugin/shared';
 import { FIXED_TIMESTEP, createJointData } from '@rapierphysicsplugin/shared';
 
@@ -398,6 +405,147 @@ export class PhysicsWorld {
 
   get bodyCount(): number {
     return this.bodyMap.size;
+  }
+
+  // --- Shape query methods ---
+
+  private createShapeFromDescriptor(desc: ShapeDescriptor): RAPIER.Shape | null {
+    switch (desc.type) {
+      case 'box': {
+        const p = desc.params as { halfExtents: Vec3 };
+        return new this.rapier.Cuboid(p.halfExtents.x, p.halfExtents.y, p.halfExtents.z);
+      }
+      case 'sphere': {
+        const p = desc.params as { radius: number };
+        return new this.rapier.Ball(p.radius);
+      }
+      case 'capsule': {
+        const p = desc.params as { halfHeight: number; radius: number };
+        return new this.rapier.Capsule(p.halfHeight, p.radius);
+      }
+      case 'mesh':
+        // Rapier cannot use trimeshes as query shapes
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  shapeCast(request: ShapeCastRequest): ShapeCastResponse {
+    const shape = this.createShapeFromDescriptor(request.shape);
+    if (!shape) {
+      return { queryId: request.queryId, hit: false };
+    }
+
+    const startPos = new this.rapier.Vector3(request.startPosition.x, request.startPosition.y, request.startPosition.z);
+    const rotation = new this.rapier.Quaternion(request.rotation.x, request.rotation.y, request.rotation.z, request.rotation.w);
+
+    const dx = request.endPosition.x - request.startPosition.x;
+    const dy = request.endPosition.y - request.startPosition.y;
+    const dz = request.endPosition.z - request.startPosition.z;
+    const maxToi = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+    if (maxToi < 1e-8) {
+      return { queryId: request.queryId, hit: false };
+    }
+
+    const direction = new this.rapier.Vector3(dx / maxToi, dy / maxToi, dz / maxToi);
+
+    const ignoreCollider = request.ignoreBodyId ? this.colliderMap.get(request.ignoreBodyId) : undefined;
+    const result = this.world.castShape(
+      startPos, rotation, direction, shape, 0, maxToi, true,
+      undefined, undefined, ignoreCollider, undefined, undefined,
+    );
+
+    if (result) {
+      const hitBodyId = this.colliderHandleToBodyId.get(result.collider.handle);
+      // Compute hit point from start + direction * toi
+      const hitPoint = {
+        x: request.startPosition.x + dx * (result.time_of_impact / maxToi),
+        y: request.startPosition.y + dy * (result.time_of_impact / maxToi),
+        z: request.startPosition.z + dz * (result.time_of_impact / maxToi),
+      };
+      const witness1 = result.witness1;
+      const normal1 = result.normal1;
+      return {
+        queryId: request.queryId,
+        hit: true,
+        hitBodyId,
+        fraction: result.time_of_impact / maxToi,
+        point: witness1 ? { x: witness1.x, y: witness1.y, z: witness1.z } : hitPoint,
+        normal: normal1 ? { x: normal1.x, y: normal1.y, z: normal1.z } : undefined,
+      };
+    }
+
+    return { queryId: request.queryId, hit: false };
+  }
+
+  shapeProximity(request: ShapeProximityRequest): ShapeProximityResponse {
+    const shape = this.createShapeFromDescriptor(request.shape);
+    if (!shape) {
+      return { queryId: request.queryId, hit: false };
+    }
+
+    const position = new this.rapier.Vector3(request.position.x, request.position.y, request.position.z);
+    const rotation = new this.rapier.Quaternion(request.rotation.x, request.rotation.y, request.rotation.z, request.rotation.w);
+    const direction = new this.rapier.Vector3(0, 0, 0);
+    const ignoreCollider = request.ignoreBodyId ? this.colliderMap.get(request.ignoreBodyId) : undefined;
+
+    const result = this.world.castShape(
+      position, rotation, direction, shape, request.maxDistance, 0, true,
+      undefined, undefined, ignoreCollider, undefined, undefined,
+    );
+
+    if (result) {
+      const hitBodyId = this.colliderHandleToBodyId.get(result.collider.handle);
+      const witness1 = result.witness1;
+      const normal1 = result.normal1;
+      return {
+        queryId: request.queryId,
+        hit: true,
+        hitBodyId,
+        distance: result.time_of_impact,
+        point: witness1 ? { x: witness1.x, y: witness1.y, z: witness1.z } : undefined,
+        normal: normal1 ? { x: normal1.x, y: normal1.y, z: normal1.z } : undefined,
+      };
+    }
+
+    return { queryId: request.queryId, hit: false };
+  }
+
+  pointProximity(request: PointProximityRequest): PointProximityResponse {
+    const point = new this.rapier.Vector3(request.position.x, request.position.y, request.position.z);
+    const ignoreCollider = request.ignoreBodyId ? this.colliderMap.get(request.ignoreBodyId) : undefined;
+
+    const result = this.world.projectPoint(
+      point, true,
+      undefined, undefined, ignoreCollider, undefined, undefined,
+    );
+
+    if (result) {
+      const hitBodyId = this.colliderHandleToBodyId.get(result.collider.handle);
+      const projected = result.point;
+      const dx = projected.x - request.position.x;
+      const dy = projected.y - request.position.y;
+      const dz = projected.z - request.position.z;
+      const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+      if (distance <= request.maxDistance) {
+        const normal = distance > 1e-8
+          ? { x: dx / distance, y: dy / distance, z: dz / distance }
+          : { x: 0, y: 1, z: 0 };
+        return {
+          queryId: request.queryId,
+          hit: true,
+          hitBodyId,
+          distance,
+          point: { x: projected.x, y: projected.y, z: projected.z },
+          normal,
+        };
+      }
+    }
+
+    return { queryId: request.queryId, hit: false };
   }
 
   destroy(): void {

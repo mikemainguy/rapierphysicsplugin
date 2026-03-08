@@ -505,13 +505,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@rapierphysicsplugin/client@npm:1.0.2, @rapierphysicsplugin/client@workspace:packages/client":
+"@rapierphysicsplugin/client@npm:1.0.5, @rapierphysicsplugin/client@workspace:packages/client":
   version: 0.0.0-use.local
   resolution: "@rapierphysicsplugin/client@workspace:packages/client"
   dependencies:
     "@babylonjs/core": "npm:^7.0.0"
     "@dimforge/rapier3d-compat": "npm:^0.19.0"
-    "@rapierphysicsplugin/shared": "npm:1.0.2"
+    "@rapierphysicsplugin/shared": "npm:1.0.5"
     typescript: "npm:^5.4.0"
   peerDependencies:
     "@babylonjs/core": ">=6.0.0"
@@ -525,9 +525,9 @@ __metadata:
     "@babylonjs/core": "npm:^7.0.0"
     "@dimforge/rapier3d-compat": "npm:^0.19.0"
     "@dimforge/rapier3d-simd-compat": "npm:^0.19.0"
-    "@rapierphysicsplugin/client": "npm:1.0.2"
-    "@rapierphysicsplugin/server": "npm:1.0.2"
-    "@rapierphysicsplugin/shared": "npm:1.0.2"
+    "@rapierphysicsplugin/client": "npm:1.0.5"
+    "@rapierphysicsplugin/server": "npm:1.0.5"
+    "@rapierphysicsplugin/shared": "npm:1.0.5"
     typescript: "npm:^5.4.0"
     vite: "npm:^6.0.0"
   dependenciesMeta:
@@ -536,13 +536,13 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@rapierphysicsplugin/server@npm:1.0.2, @rapierphysicsplugin/server@workspace:packages/server":
+"@rapierphysicsplugin/server@npm:1.0.5, @rapierphysicsplugin/server@workspace:packages/server":
   version: 0.0.0-use.local
   resolution: "@rapierphysicsplugin/server@workspace:packages/server"
   dependencies:
     "@dimforge/rapier3d-compat": "npm:^0.19.0"
     "@dimforge/rapier3d-simd-compat": "npm:^0.19.0"
-    "@rapierphysicsplugin/shared": "npm:1.0.2"
+    "@rapierphysicsplugin/shared": "npm:1.0.5"
     "@types/ws": "npm:^8.5.10"
     ts-node: "npm:^10.9.0"
     typescript: "npm:^5.4.0"
@@ -553,7 +553,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@rapierphysicsplugin/shared@npm:1.0.2, @rapierphysicsplugin/shared@workspace:packages/shared":
+"@rapierphysicsplugin/shared@npm:1.0.5, @rapierphysicsplugin/shared@workspace:packages/shared":
   version: 0.0.0-use.local
   resolution: "@rapierphysicsplugin/shared@workspace:packages/shared"
   dependencies:

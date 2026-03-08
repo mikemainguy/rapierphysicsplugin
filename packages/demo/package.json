@@ -1,6 +1,6 @@
 {
   "name": "@rapierphysicsplugin/demo",
-  "version": "1.0.0",
+  "version": "1.0.5",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,9 +14,9 @@
   "dependencies": {
     "@babylonjs/core": "^7.0.0",
     "@dimforge/rapier3d-compat": "^0.19.0",
-    "@rapierphysicsplugin/client": "1.0.2",
-    "@rapierphysicsplugin/server": "1.0.2",
-    "@rapierphysicsplugin/shared": "1.0.2"
+    "@rapierphysicsplugin/client": "1.0.5",
+    "@rapierphysicsplugin/server": "1.0.5",
+    "@rapierphysicsplugin/shared": "1.0.5"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

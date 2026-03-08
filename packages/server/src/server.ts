@@ -273,6 +273,33 @@ export class PhysicsServer {
         }
         break;
       }
+
+      case MessageType.SHAPE_CAST_REQUEST: {
+        if (!conn.roomId) return;
+        const room = this.roomManager.getRoom(conn.roomId);
+        if (room) {
+          room.handleShapeCastQuery(conn, message.request);
+        }
+        break;
+      }
+
+      case MessageType.SHAPE_PROXIMITY_REQUEST: {
+        if (!conn.roomId) return;
+        const room = this.roomManager.getRoom(conn.roomId);
+        if (room) {
+          room.handleShapeProximityQuery(conn, message.request);
+        }
+        break;
+      }
+
+      case MessageType.POINT_PROXIMITY_REQUEST: {
+        if (!conn.roomId) return;
+        const room = this.roomManager.getRoom(conn.roomId);
+        if (room) {
+          room.handlePointProximityQuery(conn, message.request);
+        }
+        break;
+      }
     }
   }
 

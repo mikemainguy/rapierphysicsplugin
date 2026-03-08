@@ -5,6 +5,9 @@ import type {
   ConstraintDescriptor,
   RoomSnapshot,
   Vec3,
+  ShapeCastRequest,
+  ShapeProximityRequest,
+  PointProximityRequest,
 } from '@rapierphysicsplugin/shared';
 import {
   BROADCAST_INTERVAL,
@@ -119,6 +122,9 @@ export class Room {
   }
 
   addBody(descriptor: BodyDescriptor): string {
+    if (this.physicsWorld.hasBody(descriptor.id)) {
+      return descriptor.id; // already exists, no-op
+    }
     const id = this.physicsWorld.addBody(descriptor);
     const bodyIndex = this.stateManager.ensureBodyIndex(id);
     // Store descriptor without meshData (mesh geometry arrives via binary channel)
@@ -168,6 +174,9 @@ export class Room {
   }
 
   addConstraint(descriptor: ConstraintDescriptor): string {
+    if (this.activeConstraints.has(descriptor.id)) {
+      return descriptor.id; // already exists, no-op
+    }
     const id = this.physicsWorld.addConstraint(descriptor);
     this.activeConstraints.set(id, descriptor);
 
@@ -355,6 +364,30 @@ export class Room {
     for (const [, client] of this.clients) {
       client.send(message);
     }
+  }
+
+  handleShapeCastQuery(conn: ClientConnection, request: ShapeCastRequest): void {
+    const response = this.physicsWorld.shapeCast(request);
+    conn.send(encodeMessage({
+      type: MessageType.SHAPE_CAST_RESPONSE,
+      response,
+    }));
+  }
+
+  handleShapeProximityQuery(conn: ClientConnection, request: ShapeProximityRequest): void {
+    const response = this.physicsWorld.shapeProximity(request);
+    conn.send(encodeMessage({
+      type: MessageType.SHAPE_PROXIMITY_RESPONSE,
+      response,
+    }));
+  }
+
+  handlePointProximityQuery(conn: ClientConnection, request: PointProximityRequest): void {
+    const response = this.physicsWorld.pointProximity(request);
+    conn.send(encodeMessage({
+      type: MessageType.POINT_PROXIMITY_RESPONSE,
+      response,
+    }));
   }
 
   getSnapshot(): RoomSnapshot {

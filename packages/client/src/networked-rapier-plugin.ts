@@ -31,6 +31,11 @@ import type {
   MotionType,
   MeshBinaryMessage,
   ComputeConfig,
+  Vec3,
+  Quat,
+  ShapeCastResponse,
+  ShapeProximityResponse,
+  PointProximityResponse,
 } from '@rapierphysicsplugin/shared';
 import {
   encodeMeshBinary,
@@ -146,9 +151,9 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     }
 
     await this.syncClient.connect(this.config.serverUrl);
-    const snapshot = await this.syncClient.joinRoom(this.config.roomId);
 
-    // Wire up server callbacks
+    // Wire up server callbacks BEFORE joining room, so late-joiner
+    // body replay and mesh data are handled properly
     this.syncClient.onBodyAdded((descriptor) => this.handleBodyAdded(descriptor));
     this.syncClient.onBodyRemoved((bodyId) => this.handleBodyRemoved(bodyId));
     this.syncClient.onMeshBinary((msg) => this.handleMeshBinaryReceived(msg));
@@ -164,6 +169,7 @@ export class NetworkedRapierPlugin extends RapierPlugin {
       for (const cb of this.stateUpdateCallbacks) cb(state);
     });
 
+    const snapshot = await this.syncClient.joinRoom(this.config.roomId);
     return snapshot;
   }
 
@@ -178,13 +184,9 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     }
 
     if (this.remoteBodyCreationIds.size === 0) {
-      // Generate body ID from transform node name or random UUID
-      const name = body.transformNode?.name;
-      const id = name ?? crypto.randomUUID();
-      this.bodyToId.set(body, id);
-      this.idToBody.set(id, body);
-
-      // Store pending info — we need the shape before we can send the descriptor
+      // Store pending info — ID assignment is deferred to setShape() because
+      // BabylonJS sets body.transformNode AFTER calling initBody, so the
+      // mesh name isn't available yet here.
       this.pendingBodies.set(body, {
         motionType,
         position: position.clone(),
@@ -204,11 +206,15 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     super.setShape(body, shape);
 
     if (this.remoteBodyCreationIds.size === 0 && shape) {
-      const bodyId = this.bodyToId.get(body);
       const pending = this.pendingBodies.get(body);
       const shapeInfo = this.shapeParamsCache.get(shape);
 
-      if (bodyId && pending && shapeInfo) {
+      if (pending && shapeInfo) {
+        // Assign body ID now — transformNode is set by this point
+        const name = body.transformNode?.name;
+        const bodyId = name || crypto.randomUUID();
+        this.bodyToId.set(body, bodyId);
+        this.idToBody.set(bodyId, body);
         // Store pending descriptor — setMaterial will send it eagerly when
         // PhysicsAggregate sets material. Microtask fallback handles raw API usage.
         const record = { body, bodyId, pending, shapeInfo, shape, sent: false };
@@ -928,6 +934,48 @@ export class NetworkedRapierPlugin extends RapierPlugin {
       { type: 'setPosition', bodyId, data: { position: this.vec3ToPlain(position) } },
       { type: 'setRotation', bodyId, data: { rotation: { x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w } } },
     ]);
+  }
+
+  // --- Async server-side shape query methods ---
+
+  async shapeCastAsync(
+    shape: ShapeDescriptor,
+    startPosition: Vec3,
+    endPosition: Vec3,
+    rotation: Quat,
+    ignoreBodyId?: string,
+  ): Promise<ShapeCastResponse & { hitBody?: PhysicsBody }> {
+    const response = await this.syncClient.shapeCastQuery(shape, startPosition, endPosition, rotation, ignoreBodyId);
+    return {
+      ...response,
+      hitBody: response.hitBodyId ? this.idToBody.get(response.hitBodyId) : undefined,
+    };
+  }
+
+  async shapeProximityAsync(
+    shape: ShapeDescriptor,
+    position: Vec3,
+    rotation: Quat,
+    maxDistance: number,
+    ignoreBodyId?: string,
+  ): Promise<ShapeProximityResponse & { hitBody?: PhysicsBody }> {
+    const response = await this.syncClient.shapeProximityQuery(shape, position, rotation, maxDistance, ignoreBodyId);
+    return {
+      ...response,
+      hitBody: response.hitBodyId ? this.idToBody.get(response.hitBodyId) : undefined,
+    };
+  }
+
+  async pointProximityAsync(
+    position: Vec3,
+    maxDistance: number,
+    ignoreBodyId?: string,
+  ): Promise<PointProximityResponse & { hitBody?: PhysicsBody }> {
+    const response = await this.syncClient.pointProximityQuery(position, maxDistance, ignoreBodyId);
+    return {
+      ...response,
+      hitBody: response.hitBodyId ? this.idToBody.get(response.hitBodyId) : undefined,
+    };
   }
 
   // --- Proxy methods for sync client functionality ---

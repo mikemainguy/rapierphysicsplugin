@@ -6,6 +6,12 @@ import type {
   ConstraintDescriptor,
   RoomSnapshot,
   Vec3,
+  ShapeCastRequest,
+  ShapeCastResponse,
+  ShapeProximityRequest,
+  ShapeProximityResponse,
+  PointProximityRequest,
+  PointProximityResponse,
 } from './types.js';
 
 export enum MessageType {
@@ -27,6 +33,12 @@ export enum MessageType {
   ADD_CONSTRAINT = 'add_constraint',
   REMOVE_CONSTRAINT = 'remove_constraint',
   MESH_BINARY = 'mesh_binary',
+  SHAPE_CAST_REQUEST = 'shape_cast_request',
+  SHAPE_CAST_RESPONSE = 'shape_cast_response',
+  SHAPE_PROXIMITY_REQUEST = 'shape_proximity_request',
+  SHAPE_PROXIMITY_RESPONSE = 'shape_proximity_response',
+  POINT_PROXIMITY_REQUEST = 'point_proximity_request',
+  POINT_PROXIMITY_RESPONSE = 'point_proximity_response',
   ERROR = 'error',
 }
 
@@ -102,6 +114,40 @@ export interface MeshBinaryMessage {
   specularColor?: { r: number; g: number; b: number };
 }
 
+// --- Shape query messages (Client → Server) ---
+
+export interface ShapeCastRequestMessage {
+  type: MessageType.SHAPE_CAST_REQUEST;
+  request: ShapeCastRequest;
+}
+
+export interface ShapeProximityRequestMessage {
+  type: MessageType.SHAPE_PROXIMITY_REQUEST;
+  request: ShapeProximityRequest;
+}
+
+export interface PointProximityRequestMessage {
+  type: MessageType.POINT_PROXIMITY_REQUEST;
+  request: PointProximityRequest;
+}
+
+// --- Shape query messages (Server → Client) ---
+
+export interface ShapeCastResponseMessage {
+  type: MessageType.SHAPE_CAST_RESPONSE;
+  response: ShapeCastResponse;
+}
+
+export interface ShapeProximityResponseMessage {
+  type: MessageType.SHAPE_PROXIMITY_RESPONSE;
+  response: ShapeProximityResponse;
+}
+
+export interface PointProximityResponseMessage {
+  type: MessageType.POINT_PROXIMITY_RESPONSE;
+  response: PointProximityResponse;
+}
+
 // --- Server → Client messages ---
 
 export interface ClockSyncResponseMessage {
@@ -165,7 +211,10 @@ export type ClientMessage =
   | BodyEventMessage
   | AddConstraintMessage
   | RemoveConstraintMessage
-  | MeshBinaryMessage;
+  | MeshBinaryMessage
+  | ShapeCastRequestMessage
+  | ShapeProximityRequestMessage
+  | PointProximityRequestMessage;
 
 export type ServerMessage =
   | ClockSyncResponseMessage
@@ -180,4 +229,7 @@ export type ServerMessage =
   | BodyEventMessage
   | AddConstraintMessage
   | RemoveConstraintMessage
-  | MeshBinaryMessage;
+  | MeshBinaryMessage
+  | ShapeCastResponseMessage
+  | ShapeProximityResponseMessage
+  | PointProximityResponseMessage;

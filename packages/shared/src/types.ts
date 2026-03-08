@@ -131,6 +131,60 @@ export type ConstraintType =
   | 'six_dof'
   | 'spring';
 
+// --- Shape query types ---
+
+export interface ShapeCastRequest {
+  queryId: number;
+  shape: ShapeDescriptor;
+  startPosition: Vec3;
+  endPosition: Vec3;
+  rotation: Quat;
+  ignoreBodyId?: string;
+}
+
+export interface ShapeCastResponse {
+  queryId: number;
+  hit: boolean;
+  hitBodyId?: string;
+  fraction?: number;
+  point?: Vec3;
+  normal?: Vec3;
+}
+
+export interface ShapeProximityRequest {
+  queryId: number;
+  shape: ShapeDescriptor;
+  position: Vec3;
+  rotation: Quat;
+  maxDistance: number;
+  ignoreBodyId?: string;
+}
+
+export interface ShapeProximityResponse {
+  queryId: number;
+  hit: boolean;
+  hitBodyId?: string;
+  distance?: number;
+  point?: Vec3;
+  normal?: Vec3;
+}
+
+export interface PointProximityRequest {
+  queryId: number;
+  position: Vec3;
+  maxDistance: number;
+  ignoreBodyId?: string;
+}
+
+export interface PointProximityResponse {
+  queryId: number;
+  hit: boolean;
+  hitBodyId?: string;
+  distance?: number;
+  point?: Vec3;
+  normal?: Vec3;
+}
+
 export interface ConstraintDescriptor {
   id: string;
   bodyIdA: string;

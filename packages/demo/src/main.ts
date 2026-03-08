@@ -43,9 +43,10 @@ async function main() {
   const debugEl = document.getElementById('debug')!;
 
   let plugin: NetworkedRapierPlugin;
+  let snapshot: import('@rapierphysicsplugin/shared').RoomSnapshot;
   try {
     debugEl.textContent = 'Connecting...';
-    ({ plugin } = await NetworkedRapierPlugin.createAsync(
+    ({ plugin, snapshot } = await NetworkedRapierPlugin.createAsync(
       RAPIER, gravity,
       { serverUrl: 'wss://rapier-server.flatearthdefense.com', roomId: 'demo' },
       scene,
@@ -110,8 +111,10 @@ async function main() {
       swingMesh.dispose();
     };
   }
-  createGround();
-  createConstraints();
+  // Only create scene bodies if they don't already exist on the server
+  const knownIds = new Set(snapshot.bodies.map(b => b.id));
+  if (!knownIds.has('ground')) createGround();
+  if (!knownIds.has('static')) createConstraints();
 
   // 5. Start/Reset button
   const simButton = document.getElementById('simButton') as HTMLButtonElement;

@@ -8,6 +8,12 @@ import type {
   ClientMessage,
   ServerMessage,
   ClientInput,
+  ShapeDescriptor,
+  Vec3,
+  Quat,
+  ShapeCastResponse,
+  ShapeProximityResponse,
+  PointProximityResponse,
 } from '@rapierphysicsplugin/shared';
 import {
   MessageType,
@@ -77,6 +83,14 @@ export class PhysicsSyncClient {
   private meshRefCallbacks: MeshRefCallback[] = [];
   private materialDefCallbacks: MaterialDefCallback[] = [];
   private textureDefCallbacks: TextureDefCallback[] = [];
+
+  // Shape query correlation
+  private nextQueryId = 0;
+  private pendingQueries = new Map<number, {
+    resolve: (value: unknown) => void;
+    reject: (reason: Error) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
 
   private connectResolve: (() => void) | null = null;
   private connectReject: ((err: Error) => void) | null = null;
@@ -178,6 +192,7 @@ export class PhysicsSyncClient {
       this.ws.onclose = () => {
         this.clockSync.stop();
         this.inputManager.stop();
+        this.cleanupPendingQueries();
       };
 
       this.ws.onerror = (event) => {
@@ -232,6 +247,7 @@ export class PhysicsSyncClient {
     this.fullStateMap.clear();
     this.indexToId.clear();
     this.idToIndex.clear();
+    this.cleanupPendingQueries();
   }
 
   sendInput(actions: InputAction[]): void {
@@ -356,6 +372,82 @@ export class PhysicsSyncClient {
     }
   }
 
+  // --- Async shape query methods ---
+
+  shapeCastQuery(
+    shape: ShapeDescriptor,
+    startPosition: Vec3,
+    endPosition: Vec3,
+    rotation: Quat,
+    ignoreBodyId?: string,
+  ): Promise<ShapeCastResponse> {
+    const queryId = this.nextQueryId++;
+    return this.sendQuery(queryId, {
+      type: MessageType.SHAPE_CAST_REQUEST,
+      request: { queryId, shape, startPosition, endPosition, rotation, ignoreBodyId },
+    }) as Promise<ShapeCastResponse>;
+  }
+
+  shapeProximityQuery(
+    shape: ShapeDescriptor,
+    position: Vec3,
+    rotation: Quat,
+    maxDistance: number,
+    ignoreBodyId?: string,
+  ): Promise<ShapeProximityResponse> {
+    const queryId = this.nextQueryId++;
+    return this.sendQuery(queryId, {
+      type: MessageType.SHAPE_PROXIMITY_REQUEST,
+      request: { queryId, shape, position, rotation, maxDistance, ignoreBodyId },
+    }) as Promise<ShapeProximityResponse>;
+  }
+
+  pointProximityQuery(
+    position: Vec3,
+    maxDistance: number,
+    ignoreBodyId?: string,
+  ): Promise<PointProximityResponse> {
+    const queryId = this.nextQueryId++;
+    return this.sendQuery(queryId, {
+      type: MessageType.POINT_PROXIMITY_REQUEST,
+      request: { queryId, position, maxDistance, ignoreBodyId },
+    }) as Promise<PointProximityResponse>;
+  }
+
+  private sendQuery(queryId: number, message: ClientMessage): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      if (!this.ws) {
+        reject(new Error('Not connected'));
+        return;
+      }
+
+      const timer = setTimeout(() => {
+        this.pendingQueries.delete(queryId);
+        reject(new Error(`Query ${queryId} timed out`));
+      }, 5000);
+
+      this.pendingQueries.set(queryId, { resolve, reject, timer });
+      this.send(message);
+    });
+  }
+
+  private resolveQuery(queryId: number, response: unknown): void {
+    const pending = this.pendingQueries.get(queryId);
+    if (pending) {
+      clearTimeout(pending.timer);
+      this.pendingQueries.delete(queryId);
+      pending.resolve(response);
+    }
+  }
+
+  private cleanupPendingQueries(): void {
+    for (const [, pending] of this.pendingQueries) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error('Disconnected'));
+    }
+    this.pendingQueries.clear();
+  }
+
   startSimulation(): void {
     if (!this.ws) return;
     this.send({ type: MessageType.START_SIMULATION });
@@ -377,6 +469,7 @@ export class PhysicsSyncClient {
     this.fullStateMap.clear();
     this.indexToId.clear();
     this.idToIndex.clear();
+    this.cleanupPendingQueries();
     this.ws?.close();
     this.ws = null;
     this.roomId = null;
@@ -461,6 +554,11 @@ export class PhysicsSyncClient {
 
         // Initialize full state from snapshot
         this.initFullState(message.snapshot.bodies);
+
+        // Seed the reconciler/interpolator with the initial snapshot so late-joiners
+        // have valid positions for all bodies immediately (including static bodies
+        // that may never appear in a ROOM_STATE delta).
+        this.reconciler.processServerState(message.snapshot);
 
         // Start input manager
         this.inputManager.start(
@@ -586,6 +684,18 @@ export class PhysicsSyncClient {
         for (const cb of this.constraintRemovedCallbacks) {
           cb(message.constraintId);
         }
+        break;
+
+      case MessageType.SHAPE_CAST_RESPONSE:
+        this.resolveQuery(message.response.queryId, message.response);
+        break;
+
+      case MessageType.SHAPE_PROXIMITY_RESPONSE:
+        this.resolveQuery(message.response.queryId, message.response);
+        break;
+
+      case MessageType.POINT_PROXIMITY_RESPONSE:
+        this.resolveQuery(message.response.queryId, message.response);
         break;
 
       case MessageType.ERROR:

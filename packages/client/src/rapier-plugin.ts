@@ -19,9 +19,16 @@ import type {
   ConstrainedBodyPair,
   BoundingBox,
 } from '@babylonjs/core';
+import type { IPhysicsShapeCastQuery } from '@babylonjs/core/Physics/physicsShapeCastQuery';
+import type { IPhysicsShapeProximityCastQuery } from '@babylonjs/core/Physics/physicsShapeProximityCastQuery';
+import type { IPhysicsPointProximityQuery } from '@babylonjs/core/Physics/physicsPointProximityQuery';
+import { ShapeCastResult } from '@babylonjs/core/Physics/shapeCastResult';
+import { ProximityCastResult } from '@babylonjs/core/Physics/proximityCastResult';
+import {
+  PhysicsShapeType,
+} from '@babylonjs/core';
 import type {
   PhysicsMotionType,
-  PhysicsShapeType,
   PhysicsConstraintAxisLimitMode,
   PhysicsConstraintMotorType,
   PhysicsConstraintAxis,
@@ -298,6 +305,163 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
         new Vector3(hitPoint.x, hitPoint.y, hitPoint.z)
       );
       result.calculateHitDistance();
+    }
+  }
+
+  // --- Shape casting & proximity ---
+
+  private createRapierShape(shape: PhysicsShape): RAPIER.Shape | null {
+    const type = this.shapeTypeMap.get(shape);
+    const desc = this.shapeToColliderDesc.get(shape);
+    if (type === undefined || !desc) return null;
+
+    switch (type) {
+      case PhysicsShapeType.BOX: {
+        const he = (desc as any).halfExtents;
+        if (he) return new this.rapier.Cuboid(he.x, he.y, he.z);
+        return null;
+      }
+      case PhysicsShapeType.SPHERE: {
+        const r = (desc as any).radius;
+        if (r !== undefined) return new this.rapier.Ball(r);
+        return null;
+      }
+      case PhysicsShapeType.CAPSULE: {
+        const r = (desc as any).radius;
+        const hh = (desc as any).halfHeight;
+        if (r !== undefined && hh !== undefined) return new this.rapier.Capsule(hh, r);
+        return null;
+      }
+      case PhysicsShapeType.CYLINDER: {
+        const r = (desc as any).radius;
+        const hh = (desc as any).halfHeight;
+        if (r !== undefined && hh !== undefined) return new this.rapier.Cylinder(hh, r);
+        return null;
+      }
+      default:
+        return null;
+    }
+  }
+
+  private findBodyForColliderHandle(handle: number): { body: PhysicsBody; shape: PhysicsShape } | null {
+    const body = this.colliderHandleToBody.get(handle);
+    if (!body) return null;
+    const shape = this.bodyToShape.get(body);
+    if (!shape) return null;
+    return { body, shape };
+  }
+
+  shapeCast(query: IPhysicsShapeCastQuery, inputShapeResult: ShapeCastResult, hitShapeResult: ShapeCastResult): void {
+    const rapierShape = this.createRapierShape(query.shape);
+    if (!rapierShape) return;
+
+    const dir = query.endPosition.subtract(query.startPosition);
+    const maxToi = dir.length();
+    if (maxToi === 0) return;
+    const vel = dir.normalize();
+
+    const shapePos = new this.rapier.Vector3(query.startPosition.x, query.startPosition.y, query.startPosition.z);
+    const shapeRot = new this.rapier.Quaternion(query.rotation.x, query.rotation.y, query.rotation.z, query.rotation.w);
+    const shapeVel = new this.rapier.Vector3(vel.x, vel.y, vel.z);
+
+    const excludeRb = query.ignoreBody ? this.bodyToRigidBody.get(query.ignoreBody) ?? null : null;
+
+    const hit = this.world.castShape(shapePos, shapeRot, shapeVel, rapierShape, 0, maxToi, true, undefined, undefined, undefined, excludeRb ?? undefined);
+    if (hit) {
+      const fraction = hit.time_of_impact / maxToi;
+      const hitNormal = hit.normal1;
+      const hitPoint = hit.witness1;
+
+      inputShapeResult.setHitData(
+        new Vector3(hitNormal.x, hitNormal.y, hitNormal.z),
+        new Vector3(
+          query.startPosition.x + vel.x * hit.time_of_impact,
+          query.startPosition.y + vel.y * hit.time_of_impact,
+          query.startPosition.z + vel.z * hit.time_of_impact,
+        ),
+      );
+      inputShapeResult.setHitFraction(fraction);
+
+      hitShapeResult.setHitData(
+        new Vector3(hit.normal2.x, hit.normal2.y, hit.normal2.z),
+        new Vector3(hitPoint.x, hitPoint.y, hitPoint.z),
+      );
+      hitShapeResult.setHitFraction(fraction);
+
+      const info = this.findBodyForColliderHandle(hit.collider.handle);
+      if (info) {
+        hitShapeResult.body = info.body;
+        hitShapeResult.shape = info.shape;
+      }
+    }
+  }
+
+  shapeProximity(query: IPhysicsShapeProximityCastQuery, inputShapeResult: ProximityCastResult, hitShapeResult: ProximityCastResult): void {
+    const rapierShape = this.createRapierShape(query.shape);
+    if (!rapierShape) return;
+
+    const shapePos = new this.rapier.Vector3(query.position.x, query.position.y, query.position.z);
+    const shapeRot = new this.rapier.Quaternion(query.rotation.x, query.rotation.y, query.rotation.z, query.rotation.w);
+    const zeroVel = new this.rapier.Vector3(0, 0, 0);
+
+    const excludeRb = query.ignoreBody ? this.bodyToRigidBody.get(query.ignoreBody) ?? null : null;
+
+    const hit = this.world.castShape(shapePos, shapeRot, zeroVel, rapierShape, query.maxDistance, 0, true, undefined, undefined, undefined, excludeRb ?? undefined);
+    if (hit) {
+      inputShapeResult.setHitData(
+        new Vector3(hit.normal1.x, hit.normal1.y, hit.normal1.z),
+        new Vector3(hit.witness1.x, hit.witness1.y, hit.witness1.z),
+      );
+      inputShapeResult.setHitDistance(hit.time_of_impact);
+
+      hitShapeResult.setHitData(
+        new Vector3(hit.normal2.x, hit.normal2.y, hit.normal2.z),
+        new Vector3(hit.witness2.x, hit.witness2.y, hit.witness2.z),
+      );
+      hitShapeResult.setHitDistance(hit.time_of_impact);
+
+      const info = this.findBodyForColliderHandle(hit.collider.handle);
+      if (info) {
+        hitShapeResult.body = info.body;
+        hitShapeResult.shape = info.shape;
+      }
+    }
+  }
+
+  pointProximity(query: IPhysicsPointProximityQuery, result: ProximityCastResult): void {
+    const point = new this.rapier.Vector3(query.position.x, query.position.y, query.position.z);
+
+    const excludeRb = query.ignoreBody ? this.bodyToRigidBody.get(query.ignoreBody) ?? null : null;
+
+    const projection = this.world.projectPoint(point, true, undefined, undefined, undefined, excludeRb ?? undefined);
+    if (projection) {
+      const dist = Math.sqrt(
+        (projection.point.x - query.position.x) ** 2 +
+        (projection.point.y - query.position.y) ** 2 +
+        (projection.point.z - query.position.z) ** 2,
+      );
+
+      if (dist <= query.maxDistance) {
+        const normal = dist > 0
+          ? new Vector3(
+              (query.position.x - projection.point.x) / dist,
+              (query.position.y - projection.point.y) / dist,
+              (query.position.z - projection.point.z) / dist,
+            )
+          : new Vector3(0, 1, 0);
+
+        result.setHitData(
+          normal,
+          new Vector3(projection.point.x, projection.point.y, projection.point.z),
+        );
+        result.setHitDistance(dist);
+
+        const info = this.findBodyForColliderHandle(projection.collider.handle);
+        if (info) {
+          result.body = info.body;
+          result.shape = info.shape;
+        }
+      }
     }
   }
 

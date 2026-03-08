@@ -1,7 +1,6 @@
 {
   "name": "rapierphysicsplugin",
-  "version": "1.0.3",
-  "private": true,
+  "version": "1.0.5",
   "packageManager": "yarn@4.13.0",
   "workspaces": [
     "packages/*"
@@ -10,7 +9,7 @@
     "build": "yarn workspaces foreach -At run build",
     "test": "vitest run",
     "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist packages/*/*.tsbuildinfo",
-    "version:sync": "node -e \"const v=require('./package.json').version;const fs=require('fs');['shared','client','server'].forEach(p=>{const f='packages/'+p+'/package.json';const j=JSON.parse(fs.readFileSync(f));j.version=v;fs.writeFileSync(f,JSON.stringify(j,null,2)+'\\n')})\"",
+    "version:sync": "node -e \"const v=require('./package.json').version;const fs=require('fs');const pkgs=fs.readdirSync('packages').filter(d=>fs.statSync('packages/'+d).isDirectory());pkgs.forEach(p=>{const f='packages/'+p+'/package.json';const j=JSON.parse(fs.readFileSync(f));j.version=v;for(const dep of ['dependencies','devDependencies','peerDependencies']){if(j[dep]){for(const k of Object.keys(j[dep])){if(k.startsWith('@rapierphysicsplugin/')){j[dep][k]=v}}}}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\\n')})\"",
     "publish:all": "yarn version:sync && yarn build && yarn workspaces foreach -A --no-private npm publish --access public"
   },
   "devDependencies": {

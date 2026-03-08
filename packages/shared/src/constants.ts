@@ -2,7 +2,7 @@
 export const SERVER_TICK_RATE = 60;
 
 /** State updates sent to clients per second */
-export const BROADCAST_RATE = 20;
+export const BROADCAST_RATE = 30;
 
 /** Client inputs sent to server per second */
 export const CLIENT_INPUT_RATE = 60;

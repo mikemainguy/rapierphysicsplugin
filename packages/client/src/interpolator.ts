@@ -32,8 +32,8 @@ export class Interpolator {
   private _stats: InterpolatorStats = this._emptyStats();
 
   constructor(renderDelayMs?: number) {
-    // Default render delay: ~3x broadcast interval to absorb jitter
-    this.renderDelay = renderDelayMs ?? (3 * (1000 / BROADCAST_RATE));
+    // Default render delay: ~4x broadcast interval to absorb network jitter
+    this.renderDelay = renderDelayMs ?? (4 * (1000 / BROADCAST_RATE));
   }
 
   private _emptyStats(): InterpolatorStats {
@@ -172,7 +172,7 @@ function extrapolateBodyState(state: BodyState, dt: number): BodyState {
       y: state.position.y + state.linVel.y * dt * decay,
       z: state.position.z + state.linVel.z * dt * decay,
     },
-    rotation: state.rotation, // Don't extrapolate rotation
+    rotation: extrapolateRotation(state.rotation, state.angVel, dt * decay),
     linVel: {
       x: state.linVel.x * decay,
       y: state.linVel.y * decay,
@@ -184,6 +184,21 @@ function extrapolateBodyState(state: BodyState, dt: number): BodyState {
       z: state.angVel.z * decay,
     },
   };
+}
+
+/** Apply angular velocity to a quaternion for a small time step */
+function extrapolateRotation(q: Quat, angVel: Vec3, dt: number): Quat {
+  const wx = angVel.x * dt * 0.5;
+  const wy = angVel.y * dt * 0.5;
+  const wz = angVel.z * dt * 0.5;
+
+  // Quaternion derivative: dq = 0.5 * omega * q
+  return normalizeQuat({
+    x: q.x + (wx * q.w + wy * q.z - wz * q.y),
+    y: q.y + (wy * q.w + wz * q.x - wx * q.z),
+    z: q.z + (wz * q.w + wx * q.y - wy * q.x),
+    w: q.w - (wx * q.x + wy * q.y + wz * q.z),
+  });
 }
 
 function hermiteInterpolateVec3(
