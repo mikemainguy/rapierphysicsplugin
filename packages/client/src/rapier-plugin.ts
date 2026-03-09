@@ -213,6 +213,7 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
   applyImpulse(body: PhysicsBody, impulse: Vector3, location: Vector3, _instanceIndex?: number): void { bodyOps.applyImpulse(this, body, impulse, location); }
   applyAngularImpulse(body: PhysicsBody, angularImpulse: Vector3, _instanceIndex?: number): void { bodyOps.applyAngularImpulse(this, body, angularImpulse); }
   applyForce(body: PhysicsBody, force: Vector3, location: Vector3, _instanceIndex?: number): void { bodyOps.applyForce(this, body, force, location); }
+  applyTorque(body: PhysicsBody, torque: Vector3, _instanceIndex?: number): void { bodyOps.applyTorque(this, body, torque); }
 
   // --- Gravity factor ---
 
@@ -286,7 +287,7 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
 
   // --- Raycast ---
 
-  raycast(from: Vector3, to: Vector3, result: PhysicsRaycastResult, _query?: IRaycastQuery): void {
+  raycast(from: Vector3, to: Vector3, result: PhysicsRaycastResult, query?: IRaycastQuery): void {
     const dir = to.subtract(from);
     const maxToi = dir.length();
     const normalizedDir = dir.normalize();
@@ -296,7 +297,21 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
       new this.rapier.Vector3(normalizedDir.x, normalizedDir.y, normalizedDir.z)
     );
 
-    const hit = this.world.castRayAndGetNormal(ray, maxToi, true);
+    let filterFlags: number | undefined;
+    let filterGroups: number | undefined;
+
+    if (query) {
+      if (query.shouldHitTriggers === false) {
+        filterFlags = this.rapier.QueryFilterFlags.EXCLUDE_SENSORS;
+      }
+      if (query.membership !== undefined || query.collideWith !== undefined) {
+        const membership = query.membership ?? 0xFFFF;
+        const collideWith = query.collideWith ?? 0xFFFF;
+        filterGroups = (membership << 16) | collideWith;
+      }
+    }
+
+    const hit = this.world.castRayAndGetNormal(ray, maxToi, true, filterFlags, filterGroups);
     if (hit) {
       const hitPoint = ray.pointAt(hit.timeOfImpact);
       const hitNormal = hit.normal;

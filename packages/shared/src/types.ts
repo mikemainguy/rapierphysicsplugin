@@ -109,6 +109,7 @@ export type InputActionType =
   | 'applyAngularImpulse'
   | 'setVelocity'
   | 'setAngularVelocity'
+  | 'applyTorque'
   | 'setPosition'
   | 'setRotation';
 
@@ -119,6 +120,7 @@ export interface InputAction {
     force?: Vec3;
     impulse?: Vec3;
     angImpulse?: Vec3;
+    torque?: Vec3;
     linVel?: Vec3;
     angVel?: Vec3;
     position?: Vec3;

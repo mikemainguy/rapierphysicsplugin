@@ -232,6 +232,12 @@ export function applyForce(state: RapierPluginState, body: PhysicsBody, force: V
   );
 }
 
+export function applyTorque(state: RapierPluginState, body: PhysicsBody, torque: Vector3): void {
+  const rb = state.bodyToRigidBody.get(body);
+  if (!rb) return;
+  rb.addTorque(new state.rapier.Vector3(torque.x, torque.y, torque.z), true);
+}
+
 export function setGravityFactor(state: RapierPluginState, body: PhysicsBody, factor: number): void {
   const rb = state.bodyToRigidBody.get(body);
   if (rb) rb.setGravityScale(factor, true);

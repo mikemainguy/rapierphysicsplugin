@@ -16,6 +16,7 @@ import {
 import type {
   PhysicsShapeParameters,
   PhysicsMaterial,
+  PhysicsMassProperties,
   PhysicsConstraint,
 } from '@babylonjs/core';
 import type { Scene, Nullable, BaseTexture } from '@babylonjs/core';
@@ -181,6 +182,9 @@ export class NetworkedRapierPlugin extends RapierPlugin {
   private sentTextureHashes: Set<string> = new Set();
   private textureObjectUrls: Map<string, string> = new Map();
 
+  // Explicit mass set via setMassProperties (avoids Rapier collider-recompute clobbering)
+  private bodyMassOverride = new Map<PhysicsBody, number>();
+
   // Collision event counter
   private collisionCount = 0;
 
@@ -235,6 +239,7 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     this.syncClient.onSimulationStarted((freshSnapshot) => this.handleSimulationStarted(freshSnapshot));
     this.syncClient.onCollisionEvents((events) => {
       this.collisionCount += events.length;
+      this.injectCollisionEvents(events);
     });
     this.syncClient.onStateUpdate((state) => {
       for (const cb of this.stateUpdateCallbacks) cb(state);
@@ -304,6 +309,13 @@ export class NetworkedRapierPlugin extends RapierPlugin {
           }
         });
       }
+    }
+  }
+
+  setMassProperties(body: PhysicsBody, massProps: PhysicsMassProperties, instanceIndex?: number): void {
+    super.setMassProperties(body, massProps, instanceIndex);
+    if (massProps.mass !== undefined) {
+      this.bodyMassOverride.set(body, massProps.mass);
     }
   }
 
@@ -379,10 +391,17 @@ export class NetworkedRapierPlugin extends RapierPlugin {
       if (!this.remoteBodies.has(bodyId)) {
         this.syncClient.removeBody(bodyId);
       }
+      // Dispose the mesh (matches handleBodyRemoved behavior)
+      const tn = body.transformNode;
+      if (tn && !tn.isDisposed()) {
+        tn.dispose();
+      }
+
       this.bodyToId.delete(body);
       this.idToBody.delete(bodyId);
       this.remoteBodies.delete(bodyId);
       this.pendingBodies.delete(body);
+      this.bodyMassOverride.delete(body);
     }
     super.removeBody(body);
   }
@@ -498,9 +517,11 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     // Get material properties
     const material: PhysicsMaterial = this.getMaterial(shape);
 
-    // Get mass from the Rapier rigid body
+    // Prefer explicitly-set mass (immune to Rapier collider recomputation)
+    // over rb.mass() which can be clobbered by recomputeMassPropertiesFromColliders.
+    const massOverride = this.bodyMassOverride.get(body);
     const rb = this.bodyToRigidBody.get(body);
-    const mass = rb ? rb.mass() : undefined;
+    const mass = massOverride !== undefined ? massOverride : (rb ? rb.mass() : undefined);
 
     // If the mesh's metadata has `owned: true`, request ownership so the server
     // auto-removes this body when the client disconnects.
@@ -974,6 +995,12 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     const bodyId = this.bodyToId.get(body);
     if (!bodyId) return;
     this.sendInput([{ type: 'applyAngularImpulse', bodyId, data: { angImpulse: this.vec3ToPlain(angularImpulse) } }]);
+  }
+
+  applyTorque(body: PhysicsBody, torque: Vector3, _instanceIndex?: number): void {
+    const bodyId = this.bodyToId.get(body);
+    if (!bodyId) return;
+    this.sendInput([{ type: 'applyTorque', bodyId, data: { torque: this.vec3ToPlain(torque) } }]);
   }
 
   setLinearVelocity(body: PhysicsBody, linVel: Vector3, _instanceIndex?: number): void {

@@ -219,6 +219,17 @@ export class PhysicsWorld {
           }
         }
         break;
+      case 'applyTorque':
+        if (action.data.torque) {
+          const body = this.bodyMap.get(action.bodyId);
+          if (body) {
+            body.addTorque(
+              new this.rapier.Vector3(action.data.torque.x, action.data.torque.y, action.data.torque.z),
+              true
+            );
+          }
+        }
+        break;
       case 'setAngularVelocity':
         if (action.data.angVel) {
           const body = this.bodyMap.get(action.bodyId);
