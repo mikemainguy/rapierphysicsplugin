@@ -15,7 +15,7 @@ npm install @rapierphysicsplugin/client @rapierphysicsplugin/shared
 ## Quick Start
 
 ```ts
-import { Engine, Scene, Vector3, MeshBuilder, PhysicsAggregate, PhysicsShapeType, BallAndSocketConstraint } from '@babylonjs/core';
+import { Engine, Scene, Vector3, MeshBuilder, PhysicsAggregate, PhysicsShapeType, PhysicsEventType, BallAndSocketConstraint } from '@babylonjs/core';
 import { NetworkedRapierPlugin } from '@rapierphysicsplugin/client';
 import { loadRapier, detectSIMDSupport, ComputeBackend } from '@rapierphysicsplugin/shared';
 
@@ -60,20 +60,30 @@ const constraint = new BallAndSocketConstraint(
 );
 anchorAgg.body.addConstraint(box.physicsBody, constraint);
 
-// 7. Listen for events
-plugin.onStateUpdate((state) => {
-  console.log(`Tick ${state.tick}, ${state.bodies.length} bodies updated`);
+// 7. Collision handling — use standard Babylon.js observables
+//    Per-body observable (fires only for this body's collisions):
+box.physicsBody.setCollisionCallbackEnabled(true);
+box.physicsBody.getCollisionObservable().add((event) => {
+  if (event.type === PhysicsEventType.COLLISION_STARTED) {
+    console.log('Hit!', event.collidedAgainst, event.point, event.impulse);
+  }
 });
 
-plugin.onCollisionEvents((events) => {
-  events.forEach(e => console.log(`Collision: ${e.bodyId1} <-> ${e.bodyId2}`));
+//    Global observable (fires for all collisions in the scene):
+plugin.onCollisionObservable.add((event) => {
+  console.log(`${event.type}: ${event.collider} <-> ${event.collidedAgainst}`);
+});
+
+// 8. Listen for state updates and simulation resets
+plugin.onStateUpdate((state) => {
+  console.log(`Tick ${state.tick}, ${state.bodies.length} bodies updated`);
 });
 
 plugin.onSimulationReset(() => {
   // Re-create local bodies (ground, etc.)
 });
 
-// 7. Render loop
+// 9. Render loop
 engine.runRenderLoop(() => scene.render());
 ```
 
@@ -143,6 +153,52 @@ body.physicsBody.setAngularVelocity(new Vector3(0, 1, 0));
 // Constraints
 anchorBody.addConstraint(childBody, constraint);
 ```
+
+## Collision Events
+
+Collision events flow from the server through standard Babylon.js observables. Both local (`RapierPlugin`) and networked (`NetworkedRapierPlugin`) modes are supported.
+
+### Per-Body Observables (recommended)
+
+```ts
+import { PhysicsEventType } from '@babylonjs/core';
+
+// Enable collision callbacks on the body
+body.physicsBody.setCollisionCallbackEnabled(true);
+
+// COLLISION_STARTED fires once when contact begins
+// COLLISION_CONTINUED fires each step while bodies remain in contact
+body.physicsBody.getCollisionObservable().add((event) => {
+  if (event.type === PhysicsEventType.COLLISION_STARTED) {
+    console.log('Contact!', event.point, event.normal, event.impulse);
+  }
+});
+
+// Optionally listen for collision ended
+body.physicsBody.setCollisionEndedCallbackEnabled(true);
+body.physicsBody.getCollisionEndedObservable().add((event) => {
+  console.log('Separated from', event.collidedAgainst);
+});
+```
+
+### Global Observables
+
+```ts
+// All collisions in the scene
+plugin.onCollisionObservable.add((event) => { /* ... */ });
+plugin.onCollisionEndedObservable.add((event) => { /* ... */ });
+plugin.onTriggerCollisionObservable.add((event) => { /* ... */ });
+```
+
+### Event Types
+
+| Type | Description |
+|------|-------------|
+| `COLLISION_STARTED` | Contact begins (includes point, normal, impulse) |
+| `COLLISION_CONTINUED` | Bodies remain in contact (updated contact data each step) |
+| `COLLISION_FINISHED` | Contact ends |
+| `TRIGGER_ENTERED` | Body enters a sensor/trigger volume |
+| `TRIGGER_EXITED` | Body exits a sensor/trigger volume |
 
 For advanced use, `plugin.sendInput()` is also available:
 

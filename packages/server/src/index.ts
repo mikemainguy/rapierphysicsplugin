@@ -3,7 +3,8 @@ import { PhysicsServer } from './server.js';
 
 export { PhysicsServer } from './server.js';
 export { PhysicsWorld } from './physics-world.js';
-export { Room, RoomManager } from './room.js';
+export { Room } from './room.js';
+export { RoomManager } from './room-manager.js';
 export { ClientConnection } from './client-connection.js';
 export { SimulationLoop } from './simulation-loop.js';
 export { StateManager } from './state-manager.js';

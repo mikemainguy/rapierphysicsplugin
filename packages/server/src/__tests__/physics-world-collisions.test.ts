@@ -152,4 +152,58 @@ describe('PhysicsWorld collision events', () => {
     // Each call returns its own array
     expect(firstEvents).not.toBe(secondEvents);
   });
+
+  it('should emit COLLISION_CONTINUED after COLLISION_STARTED while bodies remain in contact', () => {
+    world.addBody(makeGround());
+    world.addBody(makeBox('box1', 1.5));
+
+    let allEvents: ReturnType<typeof world.step> = [];
+    let foundStarted = false;
+    let foundContinued = false;
+
+    for (let i = 0; i < 200; i++) {
+      const events = world.step();
+      for (const e of events) {
+        if (e.type === 'COLLISION_STARTED') foundStarted = true;
+        if (e.type === 'COLLISION_CONTINUED') foundContinued = true;
+      }
+      allEvents.push(...events);
+      if (foundStarted && foundContinued) break;
+    }
+
+    expect(foundStarted).toBe(true);
+    expect(foundContinued).toBe(true);
+
+    // COLLISION_CONTINUED events should have body IDs
+    const continued = allEvents.filter(e => e.type === 'COLLISION_CONTINUED');
+    expect(continued.length).toBeGreaterThan(0);
+    const ids = [continued[0].bodyIdA, continued[0].bodyIdB].sort();
+    expect(ids).toEqual(['box1', 'ground']);
+  });
+
+  it('should stop emitting COLLISION_CONTINUED after COLLISION_FINISHED', () => {
+    world.addBody(makeGround());
+    world.addBody(makeBox('box1', 1.5));
+
+    // Step until collision started
+    let foundStarted = false;
+    for (let i = 0; i < 200 && !foundStarted; i++) {
+      const events = world.step();
+      foundStarted = events.some(e => e.type === 'COLLISION_STARTED');
+    }
+    expect(foundStarted).toBe(true);
+
+    // Remove the box to trigger COLLISION_FINISHED
+    world.removeBody('box1');
+
+    // Step a few more times — should get no more continued events for box1
+    for (let i = 0; i < 10; i++) {
+      const events = world.step();
+      const continuedForBox = events.filter(
+        e => e.type === 'COLLISION_CONTINUED' &&
+          (e.bodyIdA === 'box1' || e.bodyIdB === 'box1'),
+      );
+      expect(continuedForBox).toHaveLength(0);
+    }
+  });
 });

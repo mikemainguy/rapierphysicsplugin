@@ -84,6 +84,7 @@ export interface BodyDescriptor {
 
 export type CollisionEventType =
   | 'COLLISION_STARTED'
+  | 'COLLISION_CONTINUED'
   | 'COLLISION_FINISHED'
   | 'TRIGGER_ENTERED'
   | 'TRIGGER_EXITED';

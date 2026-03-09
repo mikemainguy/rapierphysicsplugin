@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { Room, RoomManager } from '../room.js';
+import { Room } from '../room.js';
 import { decodeMessage } from '@rapierphysicsplugin/shared';
 import type { BodyDescriptor, ServerMessage } from '@rapierphysicsplugin/shared';
 
@@ -183,50 +183,5 @@ describe('Room', () => {
     expect(boxAfter.position.y).toBeCloseTo(10);
 
     room.destroy();
-  });
-});
-
-describe('RoomManager', () => {
-  let rapier: typeof RAPIER;
-
-  beforeAll(async () => {
-    await RAPIER.init();
-    rapier = RAPIER;
-  });
-
-  it('should create and retrieve rooms', () => {
-    const manager = new RoomManager(rapier);
-    manager.createRoom('room1');
-
-    expect(manager.getRoom('room1')).toBeDefined();
-    expect(manager.roomCount).toBe(1);
-
-    manager.destroyRoom('room1');
-  });
-
-  it('should throw on duplicate room creation', () => {
-    const manager = new RoomManager(rapier);
-    manager.createRoom('room1');
-    expect(() => manager.createRoom('room1')).toThrow('already exists');
-    manager.destroyRoom('room1');
-  });
-
-  it('should destroy rooms', () => {
-    const manager = new RoomManager(rapier);
-    manager.createRoom('room1');
-    manager.destroyRoom('room1');
-    expect(manager.getRoom('room1')).toBeUndefined();
-    expect(manager.roomCount).toBe(0);
-  });
-
-  it('should list all room ids', () => {
-    const manager = new RoomManager(rapier);
-    manager.createRoom('room1');
-    manager.createRoom('room2');
-
-    expect(manager.getAllRoomIds().sort()).toEqual(['room1', 'room2']);
-
-    manager.destroyRoom('room1');
-    manager.destroyRoom('room2');
   });
 });

@@ -9,13 +9,40 @@ import {
   Color3,
   PhysicsAggregate,
   PhysicsShapeType,
+  PhysicsEventType,
   Mesh,
   BallAndSocketConstraint,
 } from '@babylonjs/core';
+import type { IPhysicsCollisionEvent } from '@babylonjs/core';
 import { NetworkedRapierPlugin } from '@rapierphysicsplugin/client';
 import { loadRapier, detectSIMDSupport, ComputeBackend } from '@rapierphysicsplugin/shared';
 
 const gravity = new Vector3(0, -9.81, 0);
+const FLASH_COLOR = new Color3(1, 1, 0.2);
+const FLASH_DURATION_MS = 150;
+
+/** Briefly flash a mesh's diffuse color on collision */
+function flashMeshOnCollision(mesh: Mesh): void {
+  const mat = mesh.material as StandardMaterial | null;
+  if (!mat) return;
+  const originalColor = mat.diffuseColor.clone();
+  mat.diffuseColor = FLASH_COLOR;
+  setTimeout(() => {
+    if (!mat.isDisposed()) mat.diffuseColor = originalColor;
+  }, FLASH_DURATION_MS);
+}
+
+/** Enable Babylon collision observables on a physics body with visual feedback */
+function enableCollisionFlash(agg: PhysicsAggregate, mesh: Mesh): void {
+  const body = agg.body;
+  body.setCollisionCallbackEnabled(true);
+  body.setCollisionEndedCallbackEnabled(true);
+  body.getCollisionObservable().add((event: IPhysicsCollisionEvent) => {
+    if (event.type === PhysicsEventType.COLLISION_STARTED) {
+      flashMeshOnCollision(mesh);
+    }
+  });
+}
 
 async function main() {
   // 1. Init Rapier WASM — read backend preference from URL query param
@@ -156,7 +183,8 @@ async function main() {
       mat.specularColor = new Color3(0.3, 0.3, 0.3);
       mesh.material = mat;
       mesh.position = randomPos();
-      new PhysicsAggregate(mesh, PhysicsShapeType.BOX, { mass: 1, friction: 0.5, restitution: 0.3 }, scene);
+      const agg = new PhysicsAggregate(mesh, PhysicsShapeType.BOX, { mass: 1, friction: 0.5, restitution: 0.3 }, scene);
+      enableCollisionFlash(agg, mesh);
     }
 
     for (let i = 0; i < numSpheres; i++) {
@@ -167,7 +195,8 @@ async function main() {
       mat.specularColor = new Color3(0.3, 0.3, 0.3);
       mesh.material = mat;
       mesh.position = randomPos();
-      new PhysicsAggregate(mesh, PhysicsShapeType.SPHERE, { mass: 1, friction: 0.5, restitution: 0.3 }, scene);
+      const agg = new PhysicsAggregate(mesh, PhysicsShapeType.SPHERE, { mass: 1, friction: 0.5, restitution: 0.3 }, scene);
+      enableCollisionFlash(agg, mesh);
     }
 
     for (let i = 0; i < numCapsules; i++) {
@@ -178,12 +207,13 @@ async function main() {
       mat.specularColor = new Color3(0.3, 0.3, 0.3);
       mesh.material = mat;
       mesh.position = randomPos();
-      new PhysicsAggregate(mesh, PhysicsShapeType.CAPSULE, {
+      const agg = new PhysicsAggregate(mesh, PhysicsShapeType.CAPSULE, {
         mass: 1, friction: 0.5, restitution: 0.3,
         pointA: new Vector3(0, -0.5, 0),
         pointB: new Vector3(0, 0.5, 0),
         radius: 0.3,
       }, scene);
+      enableCollisionFlash(agg, mesh);
     }
   });
 
@@ -198,7 +228,15 @@ async function main() {
     }
   };
 
-  // 8. State update tracking for debug overlay
+  // 8. Global collision observable — counts all collision events via Babylon pattern
+  let collisionStartedCount = 0;
+  let collisionContinuedCount = 0;
+  plugin.onCollisionObservable.add((event: IPhysicsCollisionEvent) => {
+    if (event.type === PhysicsEventType.COLLISION_STARTED) collisionStartedCount++;
+    else if (event.type === PhysicsEventType.COLLISION_CONTINUED) collisionContinuedCount++;
+  });
+
+  // 9. State update tracking for debug overlay
   let lastTick = 0;
   let lastDeltaCount = 0;
   plugin.onStateUpdate((state) => {
@@ -206,7 +244,7 @@ async function main() {
     lastDeltaCount = state.bodies.length;
   });
 
-  // 9. Render loop — just scene.render() + debug overlay
+  // 10. Render loop — just scene.render() + debug overlay
   const reconciler = plugin.getReconciler();
   const interpolator = reconciler.getInterpolator();
   const clockSync = plugin.getClockSync();
@@ -239,7 +277,7 @@ async function main() {
       `${sampleInfo}\n` +
       `WS sent: ${formatBytes(plugin.bytesSent)}\n` +
       `WS recv: ${formatBytes(plugin.bytesReceived)}\n` +
-      `Collisions: ${plugin.collisionEventCount}\n` +
+      `Collisions: ${collisionStartedCount} started, ${collisionContinuedCount} continued\n` +
       `Client: ${plugin.getClientId() ?? '?'}`;
   });
 

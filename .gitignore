@@ -10,3 +10,9 @@ dist/
 !.yarn/sdks
 !.yarn/versions
 .pnp.*
+
+# IDE
+.idea/
+
+# Coverage reports
+coverage/

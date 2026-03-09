@@ -54,6 +54,7 @@ export interface RapierPluginState {
   compoundChildren: Map<PhysicsShape, Array<{ child: PhysicsShape; translation?: Vector3; rotation?: Quaternion; scale?: Vector3 }>>;
   bodyEventMask: Map<PhysicsBody, number>;
   colliderHandleToBody: Map<number, PhysicsBody>;
+  activeCollisionPairs: Set<string>;
   onCollisionObservable: Observable<IPhysicsCollisionEvent>;
   onCollisionEndedObservable: Observable<IBasePhysicsCollisionEvent>;
   onTriggerCollisionObservable: Observable<IBasePhysicsCollisionEvent>;

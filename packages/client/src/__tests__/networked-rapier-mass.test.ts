@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Observable, PhysicsEventType } from '@babylonjs/core';
+import type { IPhysicsCollisionEvent } from '@babylonjs/core';
 import { RapierPlugin } from '../rapier-plugin.js';
 import { NetworkedRapierPlugin } from '../networked-rapier-plugin.js';
 
@@ -62,9 +64,12 @@ function makeMockBody(name: string) {
       name,
       getScene: () => null,
       metadata: null,
+      isDisposed: () => false,
+      dispose: () => {},
     },
     _pluginData: {},
     shape: null,
+    dispose: () => {},
   } as any;
 }
 
@@ -95,6 +100,7 @@ describe('NetworkedRapierPlugin mass in descriptor', () => {
     vi.spyOn(RapierPlugin.prototype, 'initBody').mockImplementation(() => {});
     vi.spyOn(RapierPlugin.prototype, 'initShape').mockImplementation(() => {});
     vi.spyOn(RapierPlugin.prototype, 'setShape').mockImplementation(() => {});
+    vi.spyOn(RapierPlugin.prototype, 'setMassProperties').mockImplementation(() => {});
 
     plugin = new NetworkedRapierPlugin(
       mockRapier,
@@ -147,6 +153,33 @@ describe('NetworkedRapierPlugin mass in descriptor', () => {
     expect(descriptor.position).toEqual({ x: 1, y: 2, z: 3 });
   });
 
+  it('should use setMassProperties mass over rb.mass() in descriptor', async () => {
+    const body = makeMockBody('mass-override-body');
+    const shape = makeMockShape();
+    const position = makeBjsVector3(0, 1, 0);
+    const orientation = makeBjsQuaternion(0, 0, 0, 1);
+
+    plugin.initBody(body, PhysicsMotionType.DYNAMIC as any, position, orientation);
+    plugin.initShape(shape, PhysicsShapeType.SPHERE as any, { radius: 0.3 });
+
+    // rb.mass() returns 5 (simulating collider-only mass from density*volume)
+    plugin.bodyToRigidBody.set(body, mockRigidBody as any);
+    plugin.shapeMaterialMap.set(shape, { friction: 0.5, restitution: 0 });
+
+    // setShape queues microtask
+    plugin.setShape(body, shape);
+
+    // setMassProperties called after setShape (as PhysicsAggregate does)
+    plugin.setMassProperties(body, { mass: 50 } as any);
+
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    expect(addBodySpy).toHaveBeenCalledOnce();
+    const descriptor = addBodySpy.mock.calls[0][0];
+    // Should use the explicitly-set mass (50), NOT rb.mass() (5)
+    expect(descriptor.mass).toBe(50);
+  });
+
   it('should default mass to undefined when no rigid body is mapped', async () => {
     const body = makeMockBody('no-rb-body');
     const shape = makeMockShape();
@@ -162,5 +195,151 @@ describe('NetworkedRapierPlugin mass in descriptor', () => {
     expect(addBodySpy).toHaveBeenCalledOnce();
     const descriptor = addBodySpy.mock.calls[0][0];
     expect(descriptor.mass).toBeUndefined();
+  });
+});
+
+describe('NetworkedRapierPlugin bodyIdToPhysicsBody sync', () => {
+  let plugin: NetworkedRapierPlugin;
+
+  beforeEach(() => {
+    vi.spyOn(RapierPlugin.prototype, 'initBody').mockImplementation(() => {});
+    vi.spyOn(RapierPlugin.prototype, 'initShape').mockImplementation(() => {});
+    vi.spyOn(RapierPlugin.prototype, 'setShape').mockImplementation(() => {});
+    vi.spyOn(RapierPlugin.prototype, 'setMassProperties').mockImplementation(() => {});
+    vi.spyOn(RapierPlugin.prototype, 'removeBody').mockImplementation(() => {});
+
+    plugin = new NetworkedRapierPlugin(
+      mockRapier,
+      makeBjsVector3(0, -9.81, 0),
+      { serverUrl: 'ws://localhost', roomId: 'test-room' },
+    );
+
+    (plugin as any).syncClient.addBody = vi.fn();
+    (plugin as any).syncClient.removeBody = vi.fn();
+    vi.spyOn(plugin as any, 'sendMeshBinaryForBody').mockImplementation(() => {});
+  });
+
+  it('should register body in bodyIdToPhysicsBody when setShape is called', async () => {
+    const body = makeMockBody('sync-test');
+    const shape = makeMockShape();
+
+    plugin.initBody(body, PhysicsMotionType.DYNAMIC as any, makeBjsVector3(), makeBjsQuaternion());
+    plugin.initShape(shape, PhysicsShapeType.SPHERE as any, { radius: 1 });
+    plugin.bodyToRigidBody.set(body, mockRigidBody as any);
+    plugin.shapeMaterialMap.set(shape, { friction: 0.5, restitution: 0 });
+
+    plugin.setShape(body, shape);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    // bodyIdToPhysicsBody should now contain the body
+    expect(plugin.bodyIdToPhysicsBody.get('sync-test')).toBe(body);
+  });
+
+  it('should unregister body from bodyIdToPhysicsBody on removeBody', async () => {
+    const body = makeMockBody('remove-test');
+    const shape = makeMockShape();
+
+    plugin.initBody(body, PhysicsMotionType.DYNAMIC as any, makeBjsVector3(), makeBjsQuaternion());
+    plugin.initShape(shape, PhysicsShapeType.SPHERE as any, { radius: 1 });
+    plugin.bodyToRigidBody.set(body, mockRigidBody as any);
+    plugin.shapeMaterialMap.set(shape, { friction: 0.5, restitution: 0 });
+
+    plugin.setShape(body, shape);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    expect(plugin.bodyIdToPhysicsBody.has('remove-test')).toBe(true);
+
+    plugin.removeBody(body);
+
+    expect(plugin.bodyIdToPhysicsBody.has('remove-test')).toBe(false);
+  });
+
+  it('should fire onCollisionObservable via injectCollisionEvents when bodyIdToPhysicsBody is synced', async () => {
+    const bodyA = makeMockBody('body-a');
+    const bodyB = makeMockBody('body-b');
+    const shapeA = makeMockShape();
+    const shapeB = makeMockShape();
+
+    // Register body A
+    plugin.initBody(bodyA, PhysicsMotionType.DYNAMIC as any, makeBjsVector3(), makeBjsQuaternion());
+    plugin.initShape(shapeA, PhysicsShapeType.SPHERE as any, { radius: 1 });
+    plugin.bodyToRigidBody.set(bodyA, mockRigidBody as any);
+    plugin.shapeMaterialMap.set(shapeA, { friction: 0.5, restitution: 0 });
+    plugin.setShape(bodyA, shapeA);
+
+    // Register body B
+    plugin.initBody(bodyB, PhysicsMotionType.DYNAMIC as any, makeBjsVector3(2, 0, 0), makeBjsQuaternion());
+    plugin.initShape(shapeB, PhysicsShapeType.SPHERE as any, { radius: 1 });
+    plugin.bodyToRigidBody.set(bodyB, { ...mockRigidBody, handle: 2 } as any);
+    plugin.shapeMaterialMap.set(shapeB, { friction: 0.5, restitution: 0 });
+    plugin.setShape(bodyB, shapeB);
+
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    // Both bodies should be in bodyIdToPhysicsBody
+    expect(plugin.bodyIdToPhysicsBody.get('body-a')).toBe(bodyA);
+    expect(plugin.bodyIdToPhysicsBody.get('body-b')).toBe(bodyB);
+
+    // Subscribe to collision observable
+    const collisionEvents: IPhysicsCollisionEvent[] = [];
+    plugin.onCollisionObservable.add((event) => {
+      collisionEvents.push(event);
+    });
+
+    // Inject a collision event
+    plugin.injectCollisionEvents([{
+      bodyIdA: 'body-a',
+      bodyIdB: 'body-b',
+      type: 'COLLISION_STARTED',
+      point: { x: 1, y: 0, z: 0 },
+      normal: { x: 1, y: 0, z: 0 },
+      impulse: 5,
+    }]);
+
+    expect(collisionEvents).toHaveLength(1);
+    expect(collisionEvents[0].collider).toBe(bodyA);
+    expect(collisionEvents[0].collidedAgainst).toBe(bodyB);
+    expect(collisionEvents[0].type).toBe(PhysicsEventType.COLLISION_STARTED);
+    expect(collisionEvents[0].impulse).toBe(5);
+  });
+
+  it('should handle COLLISION_CONTINUED events via injectCollisionEvents', async () => {
+    const bodyA = makeMockBody('cont-a');
+    const bodyB = makeMockBody('cont-b');
+    const shapeA = makeMockShape();
+    const shapeB = makeMockShape();
+
+    plugin.initBody(bodyA, PhysicsMotionType.DYNAMIC as any, makeBjsVector3(), makeBjsQuaternion());
+    plugin.initShape(shapeA, PhysicsShapeType.SPHERE as any, { radius: 1 });
+    plugin.bodyToRigidBody.set(bodyA, mockRigidBody as any);
+    plugin.shapeMaterialMap.set(shapeA, { friction: 0.5, restitution: 0 });
+    plugin.setShape(bodyA, shapeA);
+
+    plugin.initBody(bodyB, PhysicsMotionType.DYNAMIC as any, makeBjsVector3(), makeBjsQuaternion());
+    plugin.initShape(shapeB, PhysicsShapeType.SPHERE as any, { radius: 1 });
+    plugin.bodyToRigidBody.set(bodyB, { ...mockRigidBody, handle: 2 } as any);
+    plugin.shapeMaterialMap.set(shapeB, { friction: 0.5, restitution: 0 });
+    plugin.setShape(bodyB, shapeB);
+
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    const collisionEvents: IPhysicsCollisionEvent[] = [];
+    plugin.onCollisionObservable.add((event) => {
+      collisionEvents.push(event);
+    });
+
+    // Inject COLLISION_CONTINUED
+    plugin.injectCollisionEvents([{
+      bodyIdA: 'cont-a',
+      bodyIdB: 'cont-b',
+      type: 'COLLISION_CONTINUED',
+      point: { x: 0.5, y: 0, z: 0 },
+      normal: { x: 1, y: 0, z: 0 },
+      impulse: 2,
+    }]);
+
+    expect(collisionEvents).toHaveLength(1);
+    expect(collisionEvents[0].type).toBe(PhysicsEventType.COLLISION_CONTINUED);
+    expect(collisionEvents[0].impulse).toBe(2);
   });
 });

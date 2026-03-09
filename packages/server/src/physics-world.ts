@@ -24,6 +24,7 @@ export class PhysicsWorld {
   private colliderMap: Map<string, RAPIER.Collider> = new Map();
   private colliderHandleToBodyId: Map<number, string> = new Map();
   private constraintMap: Map<string, RAPIER.ImpulseJoint> = new Map();
+  private activeCollisionPairs: Set<string> = new Set();
   private eventQueue: RAPIER.EventQueue;
 
   constructor(rapier: typeof RAPIER, gravity: Vec3 = { x: 0, y: -9.81, z: 0 }) {
@@ -292,6 +293,7 @@ export class PhysicsWorld {
     this.world.step(this.eventQueue);
 
     const events: CollisionEventData[] = [];
+    const eventedPairs = new Set<string>();
 
     this.eventQueue.drainCollisionEvents((handle1, handle2, started) => {
       const bodyIdA = this.colliderHandleToBodyId.get(handle1);
@@ -303,12 +305,18 @@ export class PhysicsWorld {
       if (!collider1 || !collider2) return;
 
       const isSensor = collider1.isSensor() || collider2.isSensor();
+      const pairKey = handle1 < handle2 ? `${handle1}_${handle2}` : `${handle2}_${handle1}`;
+      eventedPairs.add(pairKey);
 
       let type: CollisionEventData['type'];
       if (isSensor) {
         type = started ? 'TRIGGER_ENTERED' : 'TRIGGER_EXITED';
+      } else if (started) {
+        type = 'COLLISION_STARTED';
+        this.activeCollisionPairs.add(pairKey);
       } else {
-        type = started ? 'COLLISION_STARTED' : 'COLLISION_FINISHED';
+        type = 'COLLISION_FINISHED';
+        this.activeCollisionPairs.delete(pairKey);
       }
 
       let point: Vec3 | null = null;
@@ -333,6 +341,50 @@ export class PhysicsWorld {
 
       events.push({ bodyIdA, bodyIdB, type, point, normal, impulse });
     });
+
+    // Emit COLLISION_CONTINUED for active pairs with no Rapier event this frame
+    for (const pairKey of this.activeCollisionPairs) {
+      if (eventedPairs.has(pairKey)) continue;
+
+      const [h1Str, h2Str] = pairKey.split('_');
+      const handle1 = Number(h1Str);
+      const handle2 = Number(h2Str);
+
+      const bodyIdA = this.colliderHandleToBodyId.get(handle1);
+      const bodyIdB = this.colliderHandleToBodyId.get(handle2);
+      if (!bodyIdA || !bodyIdB) {
+        // Stale pair — body was removed
+        this.activeCollisionPairs.delete(pairKey);
+        continue;
+      }
+
+      const collider1 = this.world.getCollider(handle1);
+      const collider2 = this.world.getCollider(handle2);
+      if (!collider1 || !collider2) {
+        this.activeCollisionPairs.delete(pairKey);
+        continue;
+      }
+
+      let point: Vec3 | null = null;
+      let normal: Vec3 | null = null;
+      let impulse = 0;
+
+      this.world.contactPair(collider1, collider2, (manifold, flipped) => {
+        const cp = manifold.localContactPoint1(0);
+        if (cp) {
+          point = { x: cp.x, y: cp.y, z: cp.z };
+        }
+        const n = manifold.localNormal1();
+        if (n) {
+          normal = flipped
+            ? { x: -n.x, y: -n.y, z: -n.z }
+            : { x: n.x, y: n.y, z: n.z };
+        }
+        impulse = manifold.contactImpulse(0) ?? 0;
+      });
+
+      events.push({ bodyIdA, bodyIdB, type: 'COLLISION_CONTINUED', point, normal, impulse });
+    }
 
     return events;
   }
@@ -398,6 +450,7 @@ export class PhysicsWorld {
     this.bodyMap.clear();
     this.colliderMap.clear();
     this.colliderHandleToBodyId.clear();
+    this.activeCollisionPairs.clear();
 
     // Reload from descriptors
     this.loadState(bodies);
@@ -561,6 +614,7 @@ export class PhysicsWorld {
 
   destroy(): void {
     this.constraintMap.clear();
+    this.activeCollisionPairs.clear();
     this.eventQueue.free();
     this.world.free();
     this.bodyMap.clear();

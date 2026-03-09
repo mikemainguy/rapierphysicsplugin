@@ -13,7 +13,7 @@ import {
   OPCODE_TEXTURE_DEF,
 } from '@rapierphysicsplugin/shared';
 import type { ClientMessage } from '@rapierphysicsplugin/shared';
-import { RoomManager } from './room.js';
+import { RoomManager } from './room-manager.js';
 import { ClientConnection } from './client-connection.js';
 import { handleClockSyncRequest } from './clock-sync.js';
 

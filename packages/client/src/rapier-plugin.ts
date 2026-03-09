@@ -78,6 +78,7 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
   public bodyEventMask = new Map<PhysicsBody, number>();
   public eventQueue!: RAPIER.EventQueue;
   public colliderHandleToBody = new Map<number, PhysicsBody>();
+  public activeCollisionPairs = new Set<string>();
 
   constructor(rapier: typeof RAPIER, gravity?: Vector3) {
     this.rapier = rapier;
@@ -503,6 +504,7 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
     this.compoundChildren.clear();
     this.bodyEventMask.clear();
     this.colliderHandleToBody.clear();
+    this.activeCollisionPairs.clear();
     this.shapeFilterMembership.clear();
     this.shapeFilterCollide.clear();
   }

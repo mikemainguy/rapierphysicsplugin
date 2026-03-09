@@ -291,6 +291,7 @@ export class NetworkedRapierPlugin extends RapierPlugin {
         const bodyId = name || crypto.randomUUID();
         this.bodyToId.set(body, bodyId);
         this.idToBody.set(bodyId, body);
+        this.registerBodyId(bodyId, body);
         // Store pending descriptor. Microtask fires after PhysicsAggregate
         // constructor completes, ensuring mass and material are both available.
         const record = { body, bodyId, pending, shapeInfo, shape, sent: false };
@@ -399,6 +400,7 @@ export class NetworkedRapierPlugin extends RapierPlugin {
 
       this.bodyToId.delete(body);
       this.idToBody.delete(bodyId);
+      this.unregisterBodyId(bodyId);
       this.remoteBodies.delete(bodyId);
       this.pendingBodies.delete(body);
       this.bodyMassOverride.delete(body);
@@ -442,6 +444,7 @@ export class NetworkedRapierPlugin extends RapierPlugin {
         // Track this as a remote body
         this.bodyToId.set(body, descriptor.id);
         this.idToBody.set(descriptor.id, body);
+        this.registerBodyId(descriptor.id, body);
         this.remoteBodies.add(descriptor.id);
       } finally {
         this.remoteBodyCreationIds.delete(descriptor.id);
@@ -461,6 +464,7 @@ export class NetworkedRapierPlugin extends RapierPlugin {
 
       this.bodyToId.delete(body);
       this.idToBody.delete(bodyId);
+      this.unregisterBodyId(bodyId);
       this.remoteBodies.delete(bodyId);
     }
   }
@@ -470,6 +474,7 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     const entries = Array.from(this.bodyToId.entries());
     this.bodyToId.clear();
     this.idToBody.clear();
+    this.bodyIdToPhysicsBody.clear();
     this.pendingBodies.clear();
     this.remoteBodies.clear();
     this.geometryCache.clear();
