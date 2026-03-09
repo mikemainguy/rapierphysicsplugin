@@ -32,11 +32,11 @@ const mockRapier = {
   World: class {
     gravity = { x: 0, y: -9.81, z: 0 };
     timestep = 1 / 60;
-    createRigidBody: () => mockRigidBody;
-    createCollider: () => ({});
-    step: () => {};
-    removeRigidBody: () => {};
-    removeCollider: () => {};
+    createRigidBody() { return mockRigidBody; }
+    createCollider() { return {}; }
+    step() {}
+    removeRigidBody() {}
+    removeCollider() {}
   },
   EventQueue: class {
     drainCollisionEvents() {}
