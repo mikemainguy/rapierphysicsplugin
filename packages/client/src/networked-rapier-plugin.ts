@@ -388,10 +388,7 @@ export class NetworkedRapierPlugin extends RapierPlugin {
   removeBody(body: PhysicsBody): void {
     const bodyId = this.bodyToId.get(body);
     if (bodyId) {
-      // Only tell the server to remove if this is a locally-owned body
-      if (!this.remoteBodies.has(bodyId)) {
-        this.syncClient.removeBody(bodyId);
-      }
+      this.syncClient.removeBody(bodyId);
       // Dispose the mesh (matches handleBodyRemoved behavior)
       const tn = body.transformNode;
       if (tn && !tn.isDisposed()) {
