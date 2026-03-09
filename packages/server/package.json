@@ -1,9 +1,24 @@
 {
   "name": "@rapierphysicsplugin/server",
-  "version": "1.0.5",
+  "version": "1.0.8",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "description": "Server code to run rapier simulation on authoritive server and keep clients synced",
+  "keywords": [
+    "babylonjs",
+    "physics",
+    "server",
+    "rapier",
+    "multiuser",
+    "websockets"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "Michael Mainguy",
+    "email": "mike.mainguy@gmail.com",
+    "url": "https://www.npmjs.com/~mmainguy"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node --loader ts-node/esm src/index.ts"
@@ -13,7 +28,7 @@
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.0",
-    "@rapierphysicsplugin/shared": "1.0.5",
+    "@rapierphysicsplugin/shared": "1.0.8",
     "ws": "^8.16.0"
   },
   "devDependencies": {

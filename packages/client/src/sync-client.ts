@@ -276,8 +276,18 @@ export class PhysicsSyncClient {
     this.reconciler.removeLocalBody(bodyId);
   }
 
-  addBody(body: BodyDescriptor): void {
+  /**
+   * Send a body descriptor to the server to create a new physics body.
+   *
+   * Pass `{ owned: true }` to mark this body as owned by the current client.
+   * Owned bodies are automatically removed from the server when this client
+   * disconnects. Bodies without ownership persist until explicitly removed.
+   */
+  addBody(body: BodyDescriptor, options?: { owned?: boolean }): void {
     if (!this.ws) return;
+    if (options?.owned) {
+      body.ownerId = this.clientId ?? '__self__';
+    }
     this.send({ type: MessageType.ADD_BODY, body });
   }
 

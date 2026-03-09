@@ -1,9 +1,23 @@
 {
   "name": "@rapierphysicsplugin/shared",
-  "version": "1.0.5",
+  "version": "1.0.8",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "license": "MIT",
+  "description": "shared code for rapier client and server",
+  "keywords": [
+    "babylonjs",
+    "physics",
+    "server",
+    "rapier",
+    "multiuser"
+  ],
+  "author": {
+    "name": "Michael Mainguy",
+    "email": "mike.mainguy@gmail.com",
+    "url": "https://www.npmjs.com/~mmainguy"
+  },
   "scripts": {
     "build": "tsc"
   },

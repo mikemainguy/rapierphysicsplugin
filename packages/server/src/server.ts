@@ -208,6 +208,11 @@ export class PhysicsServer {
         const room = this.roomManager.getRoom(conn.roomId);
         if (room) {
           try {
+            // If the client requested ownership, overwrite with the real sender ID
+            // to prevent spoofing. If ownerId is not set, the body has no owner.
+            if (message.body.ownerId) {
+              message.body.ownerId = conn.id;
+            }
             room.addBody(message.body);
           } catch (err) {
             conn.send(encodeMessage({

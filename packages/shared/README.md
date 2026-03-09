@@ -16,7 +16,7 @@ Core data structures for physics simulation and networking:
 
 - **`Vec3`, `Quat`** — vector and quaternion interfaces
 - **`BodyState`** — runtime physics state (position, rotation, velocities)
-- **`BodyDescriptor`** — static body definition (shape, motion type, mass, friction, restitution)
+- **`BodyDescriptor`** — static body definition (shape, motion type, mass, friction, restitution, optional `ownerId` for automatic cleanup on disconnect)
 - **`ShapeType`** — `'box' | 'sphere' | 'capsule' | 'mesh'`
 - **`MotionType`** — `'dynamic' | 'static' | 'kinematic'`
 - **`InputAction`** — commands to apply forces, impulses, or set velocities on bodies

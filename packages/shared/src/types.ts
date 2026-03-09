@@ -66,6 +66,20 @@ export interface BodyDescriptor {
   restitution?: number;
   friction?: number;
   isTrigger?: boolean;
+  /**
+   * Optional owner client ID. When set, the body is automatically removed from
+   * the room when the owning client disconnects.
+   *
+   * - From **client code** (BabylonJS plugin): set `mesh.metadata = { owned: true }`
+   *   before creating the `PhysicsAggregate`. The plugin sends an ownership request
+   *   to the server, which stamps the real client ID.
+   * - From **SyncClient**: call `syncClient.addBody(descriptor, { owned: true })`.
+   * - From **server game code**: set `ownerId` to a client ID directly on the descriptor.
+   *
+   * Bodies without `ownerId` persist until explicitly removed — they are never
+   * auto-cleaned on disconnect.
+   */
+  ownerId?: string;
 }
 
 export type CollisionEventType =

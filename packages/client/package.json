@@ -1,15 +1,31 @@
 {
   "name": "@rapierphysicsplugin/client",
-  "version": "1.0.5",
+  "version": "1.0.8",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "description": "Client plugin for babylonjs to use server authoritive multiuser rapier physics",
+  "keywords": [
+    "babylonjs",
+    "physics",
+    "plugin",
+    "server",
+    "rapier",
+    "multiuser",
+    "websockets"
+  ],
+  "author": {
+    "name": "Michael Mainguy",
+    "email": "mike.mainguy@gmail.com",
+    "url": "https://www.npmjs.com/~mmainguy"
+  },
+  "license": "MIT",
   "scripts": {
     "build": "tsc"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.0",
-    "@rapierphysicsplugin/shared": "1.0.5"
+    "@rapierphysicsplugin/shared": "1.0.8"
   },
   "peerDependencies": {
     "@babylonjs/core": ">=6.0.0"

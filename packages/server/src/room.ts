@@ -46,6 +46,10 @@ export class Room {
   private materialStore: Map<string, Uint8Array> = new Map();
   private textureStore: Map<string, Uint8Array> = new Map();
   private materialRefCount: Map<string, Set<string>> = new Map();
+  /** Maps bodyId → owning clientId for bodies with `ownerId` set. */
+  private bodyOwner: Map<string, string> = new Map();
+  /** Maps clientId → set of bodyIds owned by that client. */
+  private clientBodies: Map<string, Set<string>> = new Map();
   private currentTick = 0;
   private ticksSinceLastBroadcast = 0;
   private pendingCollisionEvents: CollisionEventData[] = [];
@@ -115,6 +119,16 @@ export class Room {
     this.inputBuffers.delete(conn.id);
     conn.roomId = null;
 
+    // Remove all bodies owned by this client
+    const ownedBodies = this.clientBodies.get(conn.id);
+    if (ownedBodies) {
+      for (const bodyId of ownedBodies) {
+        this.bodyOwner.delete(bodyId);
+        this.removeBody(bodyId);
+      }
+      this.clientBodies.delete(conn.id);
+    }
+
     // Stop simulation if no clients remain
     if (this.clients.size === 0) {
       this.simulationLoop.stop();
@@ -132,6 +146,17 @@ export class Room {
     delete (stored as Record<string, unknown>).meshData;
     this.activeBodies.set(id, stored);
 
+    // Track ownership if an ownerId is specified
+    if (descriptor.ownerId) {
+      this.bodyOwner.set(id, descriptor.ownerId);
+      let bodies = this.clientBodies.get(descriptor.ownerId);
+      if (!bodies) {
+        bodies = new Set();
+        this.clientBodies.set(descriptor.ownerId, bodies);
+      }
+      bodies.add(id);
+    }
+
     // Notify all clients (include the numeric index for the new body)
     this.broadcast(encodeMessage({
       type: MessageType.ADD_BODY,
@@ -147,6 +172,13 @@ export class Room {
     this.stateManager.removeBody(bodyId);
     this.activeBodies.delete(bodyId);
     this.meshBinaryStore.delete(bodyId);
+
+    // Clean up ownership tracking
+    const owner = this.bodyOwner.get(bodyId);
+    if (owner) {
+      this.bodyOwner.delete(bodyId);
+      this.clientBodies.get(owner)?.delete(bodyId);
+    }
 
     // Clean up geometry + material registry refs (keep defs for reuse)
     const refData = this.meshRefStore.get(bodyId);
@@ -171,6 +203,16 @@ export class Room {
       type: MessageType.REMOVE_BODY,
       bodyId,
     }));
+  }
+
+  /** Returns the client ID that owns this body, or `undefined` if unowned. */
+  getBodyOwner(bodyId: string): string | undefined {
+    return this.bodyOwner.get(bodyId);
+  }
+
+  /** Returns the set of body IDs owned by the given client. */
+  getClientBodies(clientId: string): ReadonlySet<string> {
+    return this.clientBodies.get(clientId) ?? new Set();
   }
 
   addConstraint(descriptor: ConstraintDescriptor): string {
@@ -412,6 +454,8 @@ export class Room {
     this.materialStore.clear();
     this.textureStore.clear();
     this.materialRefCount.clear();
+    this.bodyOwner.clear();
+    this.clientBodies.clear();
     this.stateManager.clear();
     for (const [, buffer] of this.inputBuffers) {
       buffer.clear();
@@ -472,6 +516,8 @@ export class Room {
     this.materialStore.clear();
     this.textureStore.clear();
     this.materialRefCount.clear();
+    this.bodyOwner.clear();
+    this.clientBodies.clear();
     this.stateManager.clear();
     this.physicsWorld.destroy();
   }

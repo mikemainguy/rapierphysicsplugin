@@ -1,7 +1,15 @@
 {
   "name": "rapierphysicsplugin",
-  "version": "1.0.5",
+  "version": "1.0.8",
   "packageManager": "yarn@4.13.0",
+  "license": "MIT",
+  "description": "shared code for rapier client and server",
+  "keywords": ["babylonjs","physics","server","rapier","multiuser"],
+  "author": {
+    "name": "Michael Mainguy",
+    "email": "mike.mainguy@gmail.com",
+    "url": "https://www.npmjs.com/~mmainguy"
+  },
   "workspaces": [
     "packages/*"
   ],

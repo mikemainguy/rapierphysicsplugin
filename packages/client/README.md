@@ -94,6 +94,30 @@ scene.enablePhysics(gravity, plugin);
 await plugin.connect(scene);
 ```
 
+## Body Ownership
+
+By default, bodies created by a client persist in the room even after that client disconnects. To have a body automatically removed when its creator disconnects, set `owned: true` in the mesh's metadata before creating the physics aggregate:
+
+```ts
+// Owned body — auto-removed when this client disconnects
+const bullet = MeshBuilder.CreateSphere('bullet', { diameter: 0.2 }, scene);
+bullet.metadata = { owned: true };
+new PhysicsAggregate(bullet, PhysicsShapeType.SPHERE, { mass: 1 }, scene);
+
+// Unowned body (default) — persists until explicitly removed
+const ground = MeshBuilder.CreateGround('ground', { width: 20, height: 20 }, scene);
+new PhysicsAggregate(ground, PhysicsShapeType.BOX, { mass: 0 }, scene);
+```
+
+If you're using the lower-level `PhysicsSyncClient` directly:
+
+```ts
+syncClient.addBody(descriptor, { owned: true });   // owned
+syncClient.addBody(descriptor);                     // unowned (default)
+```
+
+The server validates ownership requests — a client can only own bodies as itself (the server stamps the real client ID regardless of what the client sends).
+
 ## Supported Shape Types
 
 - `PhysicsShapeType.BOX`

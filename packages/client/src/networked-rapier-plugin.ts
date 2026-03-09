@@ -286,8 +286,8 @@ export class NetworkedRapierPlugin extends RapierPlugin {
         const bodyId = name || crypto.randomUUID();
         this.bodyToId.set(body, bodyId);
         this.idToBody.set(bodyId, body);
-        // Store pending descriptor — setMaterial will send it eagerly when
-        // PhysicsAggregate sets material. Microtask fallback handles raw API usage.
+        // Store pending descriptor. Microtask fires after PhysicsAggregate
+        // constructor completes, ensuring mass and material are both available.
         const record = { body, bodyId, pending, shapeInfo, shape, sent: false };
         this.pendingDescriptors.set(shape, record);
         this.pendingBodies.delete(body);
@@ -303,21 +303,6 @@ export class NetworkedRapierPlugin extends RapierPlugin {
             }
           }
         });
-      }
-    }
-  }
-
-  setMaterial(shape: PhysicsShape, material: PhysicsMaterial): void {
-    super.setMaterial(shape, material);
-
-    const record = this.pendingDescriptors.get(shape);
-    if (record && !record.sent) {
-      record.sent = true;
-      this.pendingDescriptors.delete(shape);
-      const descriptor = this.buildDescriptor(record.body, record.bodyId, record.pending, record.shapeInfo, shape);
-      if (descriptor) {
-        this.syncClient.addBody(descriptor);
-        this.sendMeshBinaryForBody(record.body, record.bodyId);
       }
     }
   }
@@ -517,6 +502,10 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     const rb = this.bodyToRigidBody.get(body);
     const mass = rb ? rb.mass() : undefined;
 
+    // If the mesh's metadata has `owned: true`, request ownership so the server
+    // auto-removes this body when the client disconnects.
+    const owned = body.transformNode?.metadata?.owned === true;
+
     return {
       id: bodyId,
       shape: shapeDescriptor,
@@ -526,6 +515,7 @@ export class NetworkedRapierPlugin extends RapierPlugin {
       mass,
       friction: material.friction,
       restitution: material.restitution,
+      ownerId: owned ? (this.syncClient.getClientId() ?? '__self__') : undefined,
     };
   }
 

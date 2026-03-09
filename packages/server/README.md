@@ -63,6 +63,35 @@ room.loadInitialState([
 ]);
 ```
 
+## Body Ownership
+
+Bodies can optionally be **owned** by a client. When an owning client disconnects, all of their owned bodies are automatically removed from the room. Bodies without an owner persist until explicitly removed.
+
+### Client-spawned bodies
+
+When a client sends an `ADD_BODY` message with `ownerId` set (any truthy value), the server overwrites it with the real client ID. This prevents spoofing while giving clients a simple opt-in mechanism.
+
+### Server-side ownership
+
+You can assign ownership directly when creating bodies in server game code:
+
+```ts
+const room = roomManager.createRoom('my-room');
+
+// Owned body — removed when client_42 disconnects
+room.addBody({ ...descriptor, ownerId: 'client_42' });
+
+// Unowned body — persists forever (default)
+room.addBody(descriptor);
+```
+
+### Querying ownership
+
+```ts
+room.getBodyOwner('box_1');          // → 'client_42' | undefined
+room.getClientBodies('client_42');   // → ReadonlySet<string>
+```
+
 ## SIMD Backend
 
 For best performance, use the SIMD backend. Set via environment variable:
@@ -85,7 +114,7 @@ Falls back to `wasm-compat` automatically if SIMD is unavailable.
 |-------|---------|
 | `PhysicsServer` | WebSocket server, routes messages to rooms |
 | `PhysicsWorld` | Rapier world wrapper — steps physics, applies inputs, generates snapshots |
-| `Room` | Manages a physics world + connected clients, handles body sync |
+| `Room` | Manages a physics world + connected clients, handles body sync and ownership |
 | `RoomManager` | Creates and retrieves rooms |
 | `SimulationLoop` | Runs the physics tick loop at 60 Hz |
 | `StateManager` | Generates full snapshots and delta-compressed state updates |
