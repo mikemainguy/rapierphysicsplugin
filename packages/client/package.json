@@ -28,7 +28,7 @@
     "@rapierphysicsplugin/shared": "1.0.11"
   },
   "peerDependencies": {
-    "@babylonjs/core": ">=6.0.0"
+    "@babylonjs/core": ">=8.0.0"
   },
   "devDependencies": {
     "@babylonjs/core": "^8.0.0",

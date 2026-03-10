@@ -5,7 +5,7 @@ import type {
   PhysicsMassProperties,
   TransformNode,
 } from '@babylonjs/core';
-import type { RapierPluginState } from './rapier-types.js';
+import type { RapierPluginState } from './types.js';
 
 export function initBody(
   state: RapierPluginState,

@@ -21,8 +21,8 @@ import type {
   MaterialDefData,
   TextureDefData,
 } from '@rapierphysicsplugin/shared';
-import type { RapierPluginState } from './rapier-types.js';
-import type { PhysicsSyncClient } from './sync-client.js';
+import type { RapierPluginState } from '../rapier/types.js';
+import type { PhysicsSyncClient } from '../sync/sync-client.js';
 
 // Colors for different shape types (matches demo)
 export const shapeColors: Record<string, Color3> = {

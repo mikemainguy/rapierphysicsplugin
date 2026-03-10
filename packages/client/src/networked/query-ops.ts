@@ -8,7 +8,7 @@ import type {
   ShapeProximityResponse,
   PointProximityResponse,
 } from '@rapierphysicsplugin/shared';
-import type { NetworkedPluginState } from './networked-plugin-types.js';
+import type { NetworkedPluginState } from './types.js';
 
 function vec3ToPlain(v: Vector3): { x: number; y: number; z: number } {
   return { x: v.x, y: v.y, z: v.z };

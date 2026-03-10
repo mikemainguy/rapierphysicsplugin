@@ -1,9 +1,9 @@
-export { PhysicsSyncClient } from './sync-client.js';
-export { RapierPlugin } from './rapier-plugin.js';
-export { NetworkedRapierPlugin } from './networked-rapier-plugin.js';
-export type { NetworkedRapierPluginConfig } from './networked-rapier-plugin.js';
-export { ClockSyncClient } from './clock-sync.js';
-export { StateReconciler, needsCorrection, blendBodyState } from './state-reconciler.js';
-export { Interpolator } from './interpolator.js';
-export type { InterpolatorStats } from './interpolator.js';
-export { InputManager } from './input-manager.js';
+export { PhysicsSyncClient } from './sync/sync-client.js';
+export { RapierPlugin } from './rapier/plugin.js';
+export { NetworkedRapierPlugin } from './networked/plugin.js';
+export type { NetworkedRapierPluginConfig } from './networked/plugin.js';
+export { ClockSyncClient } from './sync/clock-sync.js';
+export { StateReconciler, needsCorrection, blendBodyState } from './sync/state-reconciler.js';
+export { Interpolator } from './sync/interpolator.js';
+export type { InterpolatorStats } from './sync/interpolator.js';
+export { InputManager } from './sync/input-manager.js';

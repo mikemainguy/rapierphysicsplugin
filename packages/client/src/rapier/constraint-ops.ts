@@ -13,8 +13,8 @@ import type {
 } from '@babylonjs/core';
 import type { ConstraintDescriptor } from '@rapierphysicsplugin/shared';
 import { createJointData } from '@rapierphysicsplugin/shared';
-import type { RapierPluginState, AxisConfig } from './rapier-types.js';
-import { v3toVec } from './rapier-types.js';
+import type { RapierPluginState, AxisConfig } from './types.js';
+import { v3toVec } from './types.js';
 
 export function buildConstraintDescriptor(constraint: PhysicsConstraint): ConstraintDescriptor {
   const opts = (constraint as any)._options ?? {};

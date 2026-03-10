@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Observable, PhysicsEventType } from '@babylonjs/core';
 import type { IPhysicsCollisionEvent } from '@babylonjs/core';
-import { RapierPlugin } from '../rapier-plugin.js';
-import { NetworkedRapierPlugin } from '../networked-rapier-plugin.js';
+import { RapierPlugin } from '../../rapier/plugin.js';
+import { NetworkedRapierPlugin } from '../plugin.js';
 
 // --- Minimal mocks for Rapier WASM types ---
 

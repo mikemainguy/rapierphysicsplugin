@@ -8,8 +8,8 @@ import type {
   ConstraintUpdates,
 } from '@rapierphysicsplugin/shared';
 import { createJointData } from '@rapierphysicsplugin/shared';
-import { buildConstraintDescriptor } from './rapier-constraint-ops.js';
-import type { NetworkedPluginState } from './networked-plugin-types.js';
+import { buildConstraintDescriptor } from '../rapier/constraint-ops.js';
+import type { NetworkedPluginState } from './types.js';
 
 export function onAddConstraint(
   state: NetworkedPluginState,

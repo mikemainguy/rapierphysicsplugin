@@ -15,8 +15,8 @@ import type {
   ShapeDescriptor,
   ContainerChildShape,
 } from '@rapierphysicsplugin/shared';
-import type { NetworkedPluginState, PendingBodyInfo, CachedShapeInfo } from './networked-plugin-types.js';
-import { motionTypeToWire } from './networked-plugin-types.js';
+import type { NetworkedPluginState, PendingBodyInfo, CachedShapeInfo } from './types.js';
+import { motionTypeToWire } from './types.js';
 export function onInitBody(
   state: NetworkedPluginState,
   body: PhysicsBody,

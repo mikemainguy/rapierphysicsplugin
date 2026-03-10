@@ -22,7 +22,7 @@ import {
   computeTextureHash,
   encodeTextureDef,
 } from '@rapierphysicsplugin/shared';
-import type { NetworkedPluginState } from './networked-plugin-types.js';
+import type { NetworkedPluginState } from './types.js';
 
 export function sendMeshBinaryForBody(state: NetworkedPluginState, body: PhysicsBody, bodyId: string): void {
   const tn = body.transformNode;

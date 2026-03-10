@@ -16,8 +16,8 @@ import type {
   CapsuleShapeParams,
   RoomSnapshot,
 } from '@rapierphysicsplugin/shared';
-import type { NetworkedPluginState } from './networked-plugin-types.js';
-import { shapeColors, staticColor, motionTypeFromWire } from './networked-plugin-types.js';
+import type { NetworkedPluginState } from './types.js';
+import { shapeColors, staticColor, motionTypeFromWire } from './types.js';
 
 export function handleBodyAdded(state: NetworkedPluginState, descriptor: BodyDescriptor): void {
   if (state.idToBody.has(descriptor.id)) return;

@@ -7,7 +7,7 @@ import type {
   Nullable,
 } from '@babylonjs/core';
 import type { CollisionEventData } from '@rapierphysicsplugin/shared';
-import type { RapierPluginState } from './rapier-types.js';
+import type { RapierPluginState } from './types.js';
 
 function makePairKey(a: number, b: number): string {
   return a < b ? `${a}_${b}` : `${b}_${a}`;

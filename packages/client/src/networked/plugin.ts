@@ -25,16 +25,16 @@ import type {
   MaterialDefData,
   TextureDefData,
 } from '@rapierphysicsplugin/shared';
-import { RapierPlugin } from './rapier-plugin.js';
-import { PhysicsSyncClient } from './sync-client.js';
-import type { NetworkedRapierPluginConfig, PendingBodyInfo, CachedShapeInfo } from './networked-plugin-types.js';
-import * as bodyOps from './networked-body-ops.js';
-import * as meshOps from './networked-mesh-ops.js';
-import * as remoteOps from './networked-remote-body-ops.js';
-import * as constraintOps from './networked-constraint-ops.js';
-import * as queryOps from './networked-query-ops.js';
+import { RapierPlugin } from '../rapier/plugin.js';
+import { PhysicsSyncClient } from '../sync/sync-client.js';
+import type { NetworkedRapierPluginConfig, PendingBodyInfo, CachedShapeInfo } from './types.js';
+import * as bodyOps from './body-ops.js';
+import * as meshOps from './mesh-ops.js';
+import * as remoteOps from './remote-body-ops.js';
+import * as constraintOps from './constraint-ops.js';
+import * as queryOps from './query-ops.js';
 
-export type { NetworkedRapierPluginConfig } from './networked-plugin-types.js';
+export type { NetworkedRapierPluginConfig } from './types.js';
 
 export class NetworkedRapierPlugin extends RapierPlugin {
   public syncClient: PhysicsSyncClient;
