@@ -57,6 +57,27 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@babylonjs/inspector@npm:^8.54.1":
+  version: 8.54.1
+  resolution: "@babylonjs/inspector@npm:8.54.1"
+  peerDependencies:
+    "@babylonjs/addons": ^8.0.0
+    "@babylonjs/core": ^8.0.0
+    "@babylonjs/gui": ^8.0.0
+    "@babylonjs/gui-editor": ^8.0.0
+    "@babylonjs/loaders": ^8.0.0
+    "@babylonjs/materials": ^8.0.0
+    "@babylonjs/serializers": ^8.0.0
+    "@fluentui-contrib/react-virtualizer": ^1.0.0
+    "@fluentui/react-components": ^9.70.0
+    "@fluentui/react-icons": ^2.0.310
+    react: ">=16.14.0 <20.0.0"
+    react-dom: ">=16.14.0 <20.0.0"
+    usehooks-ts: ^3.1.1
+  checksum: 10c0/c489f4c86a03cafac6ff26819304c8d218980a367582e2606634d74dd198eee3e2d306a4a9c341c248a100066964da561407d2942e13b65eea8b151bc0858a54
+  languageName: node
+  linkType: hard
+
 "@bcoe/v8-coverage@npm:^1.0.2":
   version: 1.0.2
   resolution: "@bcoe/v8-coverage@npm:1.0.2"
@@ -605,13 +626,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@rapierphysicsplugin/client@npm:1.0.9, @rapierphysicsplugin/client@workspace:packages/client":
+"@rapierphysicsplugin/client@npm:1.0.11, @rapierphysicsplugin/client@workspace:packages/client":
   version: 0.0.0-use.local
   resolution: "@rapierphysicsplugin/client@workspace:packages/client"
   dependencies:
     "@babylonjs/core": "npm:^8.0.0"
     "@dimforge/rapier3d-compat": "npm:^0.19.0"
-    "@rapierphysicsplugin/shared": "npm:1.0.9"
+    "@rapierphysicsplugin/shared": "npm:1.0.11"
     typescript: "npm:^5.4.0"
   peerDependencies:
     "@babylonjs/core": ">=6.0.0"
@@ -623,11 +644,12 @@ __metadata:
   resolution: "@rapierphysicsplugin/demo@workspace:packages/demo"
   dependencies:
     "@babylonjs/core": "npm:^8.0.0"
+    "@babylonjs/inspector": "npm:^8.54.1"
     "@dimforge/rapier3d-compat": "npm:^0.19.0"
     "@dimforge/rapier3d-simd-compat": "npm:^0.19.0"
-    "@rapierphysicsplugin/client": "npm:1.0.9"
-    "@rapierphysicsplugin/server": "npm:1.0.9"
-    "@rapierphysicsplugin/shared": "npm:1.0.9"
+    "@rapierphysicsplugin/client": "npm:1.0.11"
+    "@rapierphysicsplugin/server": "npm:1.0.11"
+    "@rapierphysicsplugin/shared": "npm:1.0.11"
     typescript: "npm:^5.4.0"
     vite: "npm:^6.0.0"
   dependenciesMeta:
@@ -636,13 +658,13 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@rapierphysicsplugin/server@npm:1.0.9, @rapierphysicsplugin/server@workspace:packages/server":
+"@rapierphysicsplugin/server@npm:1.0.11, @rapierphysicsplugin/server@workspace:packages/server":
   version: 0.0.0-use.local
   resolution: "@rapierphysicsplugin/server@workspace:packages/server"
   dependencies:
     "@dimforge/rapier3d-compat": "npm:^0.19.0"
     "@dimforge/rapier3d-simd-compat": "npm:^0.19.0"
-    "@rapierphysicsplugin/shared": "npm:1.0.9"
+    "@rapierphysicsplugin/shared": "npm:1.0.11"
     "@types/ws": "npm:^8.5.10"
     ts-node: "npm:^10.9.0"
     typescript: "npm:^5.4.0"
@@ -653,7 +675,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@rapierphysicsplugin/shared@npm:1.0.9, @rapierphysicsplugin/shared@workspace:packages/shared":
+"@rapierphysicsplugin/shared@npm:1.0.11, @rapierphysicsplugin/shared@workspace:packages/shared":
   version: 0.0.0-use.local
   resolution: "@rapierphysicsplugin/shared@workspace:packages/shared"
   dependencies:
@@ -895,11 +917,11 @@ __metadata:
   linkType: hard
 
 "@types/node@npm:*":
-  version: 25.3.5
-  resolution: "@types/node@npm:25.3.5"
+  version: 25.4.0
+  resolution: "@types/node@npm:25.4.0"
   dependencies:
     undici-types: "npm:~7.18.0"
-  checksum: 10c0/4cf0834a6f6933bf0aca6afead117ae3db3b8f02a5f7187a24f871db0fb9344e5e46573ba387bc53b7505e1e219c4c535cbe67221ced95bb5ad98573223b19d0
+  checksum: 10c0/da81e8b0a3a57964b1b5f85d134bfefc1b923fd67ed41756842348a049d7915b72e8773f5598d6929b9cb8119c2427993c55d364fd93bd572a3450e58b98a60e
   languageName: node
   linkType: hard
 
@@ -2369,15 +2391,15 @@ __metadata:
   linkType: hard
 
 "tar@npm:^7.5.4":
-  version: 7.5.10
-  resolution: "tar@npm:7.5.10"
+  version: 7.5.11
+  resolution: "tar@npm:7.5.11"
   dependencies:
     "@isaacs/fs-minipass": "npm:^4.0.0"
     chownr: "npm:^3.0.0"
     minipass: "npm:^7.1.2"
     minizlib: "npm:^3.1.0"
     yallist: "npm:^5.0.0"
-  checksum: 10c0/ed905e4b33886377df6e9206e5d1bd34458c21666e27943f946799416f86348c938590d573d6a69312cb29c583b122647a64ec92782f2b7e24e68d985dd72531
+  checksum: 10c0/b6bb420550ef50ef23356018155e956cd83282c97b6128d8d5cfe5740c57582d806a244b2ef0bf686a74ce526babe8b8b9061527623e935e850008d86d838929
   languageName: node
   linkType: hard
 

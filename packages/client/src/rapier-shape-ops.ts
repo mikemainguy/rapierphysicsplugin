@@ -98,8 +98,9 @@ export function initShape(state: RapierPluginState, shape: PhysicsShape, type: P
           heights = new Float32Array(subdivX * subdivZ);
           for (let z = 0; z < subdivZ; z++) {
             for (let x = 0; x < subdivX; x++) {
-              const idx = (z * subdivX + x) * 3;
-              heights[z * subdivX + x] = positions[idx + 1]; // y component
+              const bjsRow = (subdivZ - 1) - z; // BJS row 0 = max Z; Rapier col 0 = min Z
+              const idx = (bjsRow * subdivX + x) * 3;
+              heights[x * subdivZ + z] = positions[idx + 1]; // y component (column-major for Rapier)
             }
           }
           const bb = gm.getBoundingInfo().boundingBox;
@@ -108,14 +109,15 @@ export function initShape(state: RapierPluginState, shape: PhysicsShape, type: P
         }
       }
 
-      const nrows = numSamplesX - 1;
-      const ncols = numSamplesZ - 1;
+      const nrows = numSamplesZ - 1; // nrows = cells along Z axis
+      const ncols = numSamplesX - 1; // ncols = cells along X axis
       if (heights) {
         colliderDesc = state.rapier.ColliderDesc.heightfield(
           nrows,
           ncols,
           heights,
-          new state.rapier.Vector3(sizeX, 1, sizeZ)
+          new state.rapier.Vector3(sizeX, 1, sizeZ),
+          state.rapier.HeightFieldFlags.FIX_INTERNAL_EDGES
         );
         state.shapeRawData.set(shape, { heights, nrows, ncols, sizeX, sizeZ });
       } else {

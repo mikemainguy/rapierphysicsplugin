@@ -115,6 +115,9 @@ export class PhysicsWorld {
     bodyDesc.setRotation(new rapier.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w));
 
     const rigidBody = world.createRigidBody(bodyDesc);
+    if (motionType === 'dynamic') {
+      rigidBody.enableCcd(true);
+    }
 
     // Create collider(s)
     const applyColliderProps = (desc: RAPIER.ColliderDesc): void => {
@@ -601,11 +604,11 @@ export class PhysicsWorld {
       }
       case 'heightfield': {
         const p = shape.params as { heights: Float32Array; numSamplesX: number; numSamplesZ: number; sizeX: number; sizeZ: number };
-        const nrows = p.numSamplesX - 1;
-        const ncols = p.numSamplesZ - 1;
+        const nrows = p.numSamplesZ - 1; // nrows = cells along Z axis
+        const ncols = p.numSamplesX - 1; // ncols = cells along X axis
         console.log('[createColliderDesc] heightfield — heights type:', Object.prototype.toString.call(p.heights),
           'constructor:', (p.heights as any)?.constructor?.name);
-        return rapier.ColliderDesc.heightfield(nrows, ncols, toFloat32Array(p.heights), new rapier.Vector3(p.sizeX, 1, p.sizeZ));
+        return rapier.ColliderDesc.heightfield(nrows, ncols, toFloat32Array(p.heights), new rapier.Vector3(p.sizeX, 1, p.sizeZ), rapier.HeightFieldFlags.FIX_INTERNAL_EDGES);
       }
       default:
         return null;

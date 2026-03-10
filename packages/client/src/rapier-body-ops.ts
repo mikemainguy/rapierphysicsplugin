@@ -33,6 +33,9 @@ export function initBody(
   bodyDesc.setRotation(new state.rapier.Quaternion(orientation.x, orientation.y, orientation.z, orientation.w));
 
   const rigidBody = state.world.createRigidBody(bodyDesc);
+  if (motionType === PhysicsMotionType.DYNAMIC) {
+    rigidBody.enableCcd(true);
+  }
   state.bodyToRigidBody.set(body, rigidBody);
   state.bodyToColliders.set(body, []);
 }

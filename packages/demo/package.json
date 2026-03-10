@@ -1,6 +1,6 @@
 {
   "name": "@rapierphysicsplugin/demo",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -14,10 +14,11 @@
   },
   "dependencies": {
     "@babylonjs/core": "^8.0.0",
+    "@babylonjs/inspector": "^8.54.1",
     "@dimforge/rapier3d-compat": "^0.19.0",
-    "@rapierphysicsplugin/client": "1.0.10",
-    "@rapierphysicsplugin/server": "1.0.10",
-    "@rapierphysicsplugin/shared": "1.0.10"
+    "@rapierphysicsplugin/client": "1.0.11",
+    "@rapierphysicsplugin/server": "1.0.11",
+    "@rapierphysicsplugin/shared": "1.0.11"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

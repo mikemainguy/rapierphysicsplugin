@@ -12,11 +12,13 @@ import {
   PhysicsEventType,
   Mesh,
   BallAndSocketConstraint,
+  VertexBuffer,
 } from '@babylonjs/core';
 import type { IPhysicsCollisionEvent } from '@babylonjs/core';
 import { NetworkedRapierPlugin } from '@rapierphysicsplugin/client';
 import { loadRapier, detectSIMDSupport, ComputeBackend } from '@rapierphysicsplugin/shared';
 import type { ShapeDescriptor } from '@rapierphysicsplugin/shared';
+import '@babylonjs/inspector';
 
 const gravity = new Vector3(0, -9.81, 0);
 const FLASH_COLOR = new Color3(1, 1, 0.2);
@@ -88,15 +90,60 @@ async function main() {
     return;
   }
 
-  // 4. Create ground plane — standard BabylonJS physics, plugin handles networking
+  // 4. Create heightfield ground with hills and raised edges
   function createGround() {
-    const ground = MeshBuilder.CreateBox('ground', { width: 20, height: 1, depth: 20 }, scene);
+    const subdivisions = 32;
+    const groundSize = 20;
+    const ground = MeshBuilder.CreateGround('ground', {
+      width: groundSize,
+      height: groundSize,
+      subdivisions,
+      updatable: true,
+    }, scene);
+
+    // Sculpt the vertex heights: raised edges + gentle hills
+    const positions = ground.getVerticesData(VertexBuffer.PositionKind);
+    if (positions) {
+      const edgeHeight = 2.0;
+      const edgeFalloff = 0.15; // fraction of half-size for the rim ramp
+      const halfSize = groundSize / 2;
+
+      for (let i = 0; i < positions.length; i += 3) {
+        const x = positions[i];
+        const z = positions[i + 2];
+
+        // Gentle rolling hills using overlapping sine waves
+        let y = 0;
+        y += 0.3 * Math.sin(x * 0.8) * Math.cos(z * 0.6);
+        y += 0.2 * Math.sin(x * 1.5 + 1.0) * Math.sin(z * 1.2 + 0.5);
+        y += 0.15 * Math.cos(x * 0.4 + z * 0.7);
+
+        // Raised edges — smooth ramp up near the boundary
+        const dx = Math.abs(x) / halfSize; // 0 at center, 1 at edge
+        const dz = Math.abs(z) / halfSize;
+        const edgeX = Math.max(0, (dx - (1 - edgeFalloff)) / edgeFalloff); // 0→1 ramp
+        const edgeZ = Math.max(0, (dz - (1 - edgeFalloff)) / edgeFalloff);
+        const edgeFactor = Math.max(edgeX, edgeZ);
+        y += edgeHeight * edgeFactor * edgeFactor; // quadratic ramp
+
+        positions[i + 1] = y;
+      }
+
+      ground.updateVerticesData(VertexBuffer.PositionKind, positions);
+      ground.createNormals(true);
+    }
+
     const mat = new StandardMaterial('groundMat', scene);
-    mat.diffuseColor = new Color3(0.4, 0.4, 0.45);
-    mat.specularColor = new Color3(0.3, 0.3, 0.3);
+    mat.diffuseColor = new Color3(0.35, 0.5, 0.3);
+    mat.specularColor = new Color3(0.2, 0.2, 0.2);
     ground.material = mat;
-    ground.position.set(0, -0.5, 0);
-    new PhysicsAggregate(ground, PhysicsShapeType.BOX, { mass: 0, friction: 0.8, restitution: 0.3 }, scene);
+
+    new PhysicsAggregate(ground, PhysicsShapeType.HEIGHTFIELD, {
+      mass: 0,
+      friction: 0.8,
+      restitution: 0.3,
+      groundMesh: ground,
+    } as any, scene);
   }
   let constraintCleanup: (() => void) | null = null;
 
@@ -373,6 +420,17 @@ async function main() {
   });
 
   window.addEventListener('resize', () => engine.resize());
+
+  // Toggle Babylon.js Inspector with 'i' key
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'i' || e.key === 'I') {
+      if (scene.debugLayer.isVisible()) {
+        scene.debugLayer.hide();
+      } else {
+        scene.debugLayer.show({ embedMode: true });
+      }
+    }
+  });
 }
 
 function formatBytes(bytes: number): string {

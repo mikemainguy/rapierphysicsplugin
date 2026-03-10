@@ -284,8 +284,9 @@ export function shapeInfoToDescriptor(
           heights = new Float32Array(subdivX * subdivZ);
           for (let z = 0; z < subdivZ; z++) {
             for (let x = 0; x < subdivX; x++) {
-              const idx = (z * subdivX + x) * 3;
-              heights[z * subdivX + x] = positions[idx + 1];
+              const bjsRow = (subdivZ - 1) - z; // BJS row 0 = max Z; Rapier col 0 = min Z
+              const idx = (bjsRow * subdivX + x) * 3;
+              heights[x * subdivZ + z] = positions[idx + 1]; // column-major for Rapier
             }
           }
           const bb = gm.getBoundingInfo().boundingBox;
