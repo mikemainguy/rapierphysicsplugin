@@ -2,7 +2,7 @@ import { DEFAULT_PORT, ComputeBackend, loadRapier } from '@rapierphysicsplugin/s
 import { PhysicsServer } from './server.js';
 
 export { PhysicsServer } from './server.js';
-export { PhysicsWorld } from './physics-world.js';
+export { PhysicsWorld } from './physics-world/index.js';
 export { Room } from './room.js';
 export { RoomManager } from './room-manager.js';
 export { ClientConnection } from './client-connection.js';

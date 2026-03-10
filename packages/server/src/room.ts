@@ -23,7 +23,7 @@ import {
   readHashFromTextureDef,
   readHashFromMaterialDef,
 } from '@rapierphysicsplugin/shared';
-import { PhysicsWorld } from './physics-world.js';
+import { PhysicsWorld } from './physics-world/index.js';
 import { SimulationLoop } from './simulation-loop.js';
 import { StateManager } from './state-manager.js';
 import { InputBuffer } from './input-buffer.js';

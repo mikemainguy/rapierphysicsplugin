@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { PhysicsWorld } from '../physics-world.js';
+import { PhysicsWorld } from '../physics-world/index.js';
 import { StateManager } from '../state-manager.js';
 import type { BodyDescriptor } from '@rapierphysicsplugin/shared';
 import { FIELD_POSITION, FIELD_ROTATION, FIELD_LIN_VEL, FIELD_ANG_VEL, FIELD_ALL } from '@rapierphysicsplugin/shared';

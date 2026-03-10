@@ -1,6 +1,6 @@
 import type { BodyState, RoomSnapshot } from '@rapierphysicsplugin/shared';
 import { FIELD_POSITION, FIELD_ROTATION, FIELD_LIN_VEL, FIELD_ANG_VEL, FIELD_ALL } from '@rapierphysicsplugin/shared';
-import type { PhysicsWorld } from './physics-world.js';
+import type { PhysicsWorld } from './physics-world/index.js';
 
 export class StateManager {
   private lastBroadcastStates: Map<string, BodyState> = new Map();
