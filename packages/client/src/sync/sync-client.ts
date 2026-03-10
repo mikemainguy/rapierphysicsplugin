@@ -1,14 +1,10 @@
 import type {
   BodyDescriptor,
-  BodyState,
-  CollisionEventData,
   ConstraintDescriptor,
   ConstraintUpdates,
   RoomSnapshot,
   InputAction,
   ClientMessage,
-  ServerMessage,
-  ClientInput,
   ShapeDescriptor,
   Vec3,
   Quat,
@@ -16,89 +12,50 @@ import type {
   ShapeProximityResponse,
   PointProximityResponse,
 } from '@rapierphysicsplugin/shared';
-import {
-  MessageType,
-  encodeMessage,
-  decodeServerMessage,
-  FIELD_POSITION,
-  FIELD_ROTATION,
-  FIELD_LIN_VEL,
-  FIELD_ANG_VEL,
-  OPCODE_MESH_BINARY,
-  decodeMeshBinary,
-  OPCODE_GEOMETRY_DEF,
-  OPCODE_MESH_REF,
-  OPCODE_MATERIAL_DEF,
-  OPCODE_TEXTURE_DEF,
-  decodeGeometryDef,
-  decodeMeshRef,
-  decodeMaterialDef,
-  decodeTextureDef,
-} from '@rapierphysicsplugin/shared';
-import type { MeshBinaryMessage, GeometryDefData, MeshRefData, MaterialDefData, TextureDefData } from '@rapierphysicsplugin/shared';
+import { MessageType, encodeMessage } from '@rapierphysicsplugin/shared';
 import { ClockSyncClient } from './clock-sync.js';
 import { StateReconciler } from './state-reconciler.js';
 import { Interpolator } from './interpolator.js';
 import { InputManager } from './input-manager.js';
-
-type StateUpdateCallback = (state: RoomSnapshot) => void;
-type BodyAddedCallback = (body: BodyDescriptor) => void;
-type BodyRemovedCallback = (bodyId: string) => void;
-type SimulationStartedCallback = (snapshot: RoomSnapshot) => void;
-type CollisionEventsCallback = (events: CollisionEventData[]) => void;
-type ConstraintAddedCallback = (constraint: ConstraintDescriptor) => void;
-type ConstraintRemovedCallback = (constraintId: string) => void;
-type ConstraintUpdatedCallback = (constraintId: string, updates: ConstraintUpdates) => void;
-type MeshBinaryCallback = (msg: MeshBinaryMessage) => void;
-type GeometryDefCallback = (data: GeometryDefData) => void;
-type MeshRefCallback = (data: MeshRefData) => void;
-type MaterialDefCallback = (data: MaterialDefData) => void;
-type TextureDefCallback = (data: TextureDefData) => void;
+import { BodyStateTracker } from './sync-body-state.js';
+import { QueryManager } from './sync-queries.js';
+import { SyncCallbacks } from './sync-callbacks.js';
+import type {
+  StateUpdateCallback,
+  BodyAddedCallback,
+  BodyRemovedCallback,
+  SimulationStartedCallback,
+  CollisionEventsCallback,
+  ConstraintAddedCallback,
+  ConstraintRemovedCallback,
+  ConstraintUpdatedCallback,
+  MeshBinaryCallback,
+  GeometryDefCallback,
+  MeshRefCallback,
+  MaterialDefCallback,
+  TextureDefCallback,
+} from './sync-callbacks.js';
+import { dispatchBinaryMessage } from './sync-message-handler.js';
+import type { SyncClientMutableState } from './sync-message-handler.js';
 
 export class PhysicsSyncClient {
   private ws: WebSocket | null = null;
   private clockSync: ClockSyncClient;
   private reconciler: StateReconciler;
   private inputManager: InputManager;
-  private clientId: string | null = null;
-  private roomId: string | null = null;
+  private bodyState: BodyStateTracker;
+  private queries: QueryManager;
+  private callbacks: SyncCallbacks;
+  private mutableState: SyncClientMutableState = {
+    simulationRunning: false,
+    roomId: null,
+    clientId: null,
+    createResolve: null,
+    joinResolve: null,
+  };
 
-  // Body ID mapping for numeric wire format
-  private indexToId: Map<number, string> = new Map();
-  private idToIndex: Map<string, number> = new Map();
-
-  // Full state map — merges partial delta updates into complete body states
-  private fullStateMap: Map<string, BodyState> = new Map();
-
-  private _simulationRunning = false;
   private _bytesSent = 0;
   private _bytesReceived = 0;
-  private stateUpdateCallbacks: StateUpdateCallback[] = [];
-  private bodyAddedCallbacks: BodyAddedCallback[] = [];
-  private bodyRemovedCallbacks: BodyRemovedCallback[] = [];
-  private simulationStartedCallbacks: SimulationStartedCallback[] = [];
-  private collisionEventsCallbacks: CollisionEventsCallback[] = [];
-  private constraintAddedCallbacks: ConstraintAddedCallback[] = [];
-  private constraintRemovedCallbacks: ConstraintRemovedCallback[] = [];
-  private constraintUpdatedCallbacks: ConstraintUpdatedCallback[] = [];
-  private meshBinaryCallbacks: MeshBinaryCallback[] = [];
-  private geometryDefCallbacks: GeometryDefCallback[] = [];
-  private meshRefCallbacks: MeshRefCallback[] = [];
-  private materialDefCallbacks: MaterialDefCallback[] = [];
-  private textureDefCallbacks: TextureDefCallback[] = [];
-
-  // Shape query correlation
-  private nextQueryId = 0;
-  private pendingQueries = new Map<number, {
-    resolve: (value: unknown) => void;
-    reject: (reason: Error) => void;
-    timer: ReturnType<typeof setTimeout>;
-  }>();
-
-  private connectResolve: (() => void) | null = null;
-  private connectReject: ((err: Error) => void) | null = null;
-  private joinResolve: ((snapshot: RoomSnapshot) => void) | null = null;
-  private createResolve: (() => void) | null = null;
 
   constructor(options?: {
     renderDelayMs?: number;
@@ -117,12 +74,18 @@ export class PhysicsSyncClient {
     );
     this.reconciler = new StateReconciler(interpolator, options?.reconciliationThreshold);
     this.inputManager = new InputManager();
+    this.bodyState = new BodyStateTracker();
+    this.callbacks = new SyncCallbacks();
+    this.queries = new QueryManager(
+      () => this.ws !== null,
+      (msg) => this.send(msg),
+    );
   }
 
   connect(url: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.connectResolve = resolve;
-      this.connectReject = reject;
+      let connectResolve: (() => void) | null = resolve;
+      let connectReject: ((err: Error) => void) | null = reject;
 
       this.ws = new WebSocket(url);
       this.ws.binaryType = 'arraybuffer';
@@ -132,9 +95,9 @@ export class PhysicsSyncClient {
           this._bytesSent += data.byteLength;
           this.ws?.send(data);
         });
-        this.connectResolve?.();
-        this.connectResolve = null;
-        this.connectReject = null;
+        connectResolve?.();
+        connectResolve = null;
+        connectReject = null;
       };
 
       this.ws.onmessage = async (event) => {
@@ -149,53 +112,16 @@ export class PhysicsSyncClient {
         }
         this._bytesReceived += buf.byteLength;
         try {
-          // Intercept mesh binary messages directly — skip normal decode path
-          if (buf[0] === OPCODE_MESH_BINARY) {
-            const decoded = decodeMeshBinary(buf);
-            const msg: MeshBinaryMessage = { type: MessageType.MESH_BINARY, ...decoded };
-            for (const cb of this.meshBinaryCallbacks) {
-              cb(msg);
-            }
-            return;
-          }
-
-          // Intercept geometry def messages
-          if (buf[0] === OPCODE_GEOMETRY_DEF) {
-            const decoded = decodeGeometryDef(buf);
-            for (const cb of this.geometryDefCallbacks) {
-              cb(decoded);
-            }
-            return;
-          }
-
-          // Intercept mesh ref messages
-          if (buf[0] === OPCODE_MESH_REF) {
-            const decoded = decodeMeshRef(buf);
-            for (const cb of this.meshRefCallbacks) {
-              cb(decoded);
-            }
-            return;
-          }
-
-          // Intercept material def messages
-          if (buf[0] === OPCODE_MATERIAL_DEF) {
-            const decoded = decodeMaterialDef(buf);
-            for (const cb of this.materialDefCallbacks) {
-              cb(decoded);
-            }
-            return;
-          }
-
-          // Intercept texture def messages
-          if (buf[0] === OPCODE_TEXTURE_DEF) {
-            const decoded = decodeTextureDef(buf);
-            for (const cb of this.textureDefCallbacks) {
-              cb(decoded);
-            }
-            return;
-          }
-          const message = decodeServerMessage(buf, this.indexToId);
-          this.handleMessage(message);
+          dispatchBinaryMessage(buf, {
+            state: this.mutableState,
+            bodyState: this.bodyState,
+            clockSync: this.clockSync,
+            reconciler: this.reconciler,
+            inputManager: this.inputManager,
+            callbacks: this.callbacks,
+            queries: this.queries,
+            send: (msg) => this.send(msg),
+          });
         } catch (err) {
           console.warn(
             `[SyncClient] Failed to decode server message (${buf.byteLength} bytes, opcode=0x${buf[0]?.toString(16)}):`,
@@ -207,13 +133,13 @@ export class PhysicsSyncClient {
       this.ws.onclose = () => {
         this.clockSync.stop();
         this.inputManager.stop();
-        this.cleanupPendingQueries();
+        this.queries.cleanup();
       };
 
-      this.ws.onerror = (event) => {
-        this.connectReject?.(new Error('WebSocket connection failed'));
-        this.connectResolve = null;
-        this.connectReject = null;
+      this.ws.onerror = () => {
+        connectReject?.(new Error('WebSocket connection failed'));
+        connectResolve = null;
+        connectReject = null;
       };
     });
   }
@@ -225,7 +151,7 @@ export class PhysicsSyncClient {
         return;
       }
 
-      this.createResolve = resolve;
+      this.mutableState.createResolve = resolve;
 
       this.send({
         type: MessageType.CREATE_ROOM,
@@ -243,7 +169,7 @@ export class PhysicsSyncClient {
         return;
       }
 
-      this.joinResolve = resolve;
+      this.mutableState.joinResolve = resolve;
 
       this.send({
         type: MessageType.JOIN_ROOM,
@@ -253,16 +179,14 @@ export class PhysicsSyncClient {
   }
 
   leaveRoom(): void {
-    if (!this.ws || !this.roomId) return;
+    if (!this.ws || !this.mutableState.roomId) return;
 
     this.send({ type: MessageType.LEAVE_ROOM });
-    this.roomId = null;
+    this.mutableState.roomId = null;
     this.inputManager.stop();
     this.reconciler.clear();
-    this.fullStateMap.clear();
-    this.indexToId.clear();
-    this.idToIndex.clear();
-    this.cleanupPendingQueries();
+    this.bodyState.clear();
+    this.queries.cleanup();
   }
 
   sendInput(actions: InputAction[]): void {
@@ -289,7 +213,7 @@ export class PhysicsSyncClient {
   addBody(body: BodyDescriptor, options?: { owned?: boolean }): void {
     if (!this.ws) return;
     if (options?.owned) {
-      body.ownerId = this.clientId ?? '__self__';
+      body.ownerId = this.mutableState.clientId ?? '__self__';
     }
     this.send({ type: MessageType.ADD_BODY, body });
   }
@@ -314,99 +238,36 @@ export class PhysicsSyncClient {
     this.send({ type: MessageType.UPDATE_CONSTRAINT, constraintId, updates });
   }
 
-  onStateUpdate(callback: StateUpdateCallback): void {
-    this.stateUpdateCallbacks.push(callback);
-  }
+  // --- Callback registration ---
 
-  onBodyAdded(callback: BodyAddedCallback): void {
-    this.bodyAddedCallbacks.push(callback);
-  }
+  onStateUpdate(callback: StateUpdateCallback): void { this.callbacks.onStateUpdate(callback); }
+  onBodyAdded(callback: BodyAddedCallback): void { this.callbacks.onBodyAdded(callback); }
+  onBodyRemoved(callback: BodyRemovedCallback): void { this.callbacks.onBodyRemoved(callback); }
+  onSimulationStarted(callback: SimulationStartedCallback): void { this.callbacks.onSimulationStarted(callback); }
+  onCollisionEvents(callback: CollisionEventsCallback): void { this.callbacks.onCollisionEvents(callback); }
+  onConstraintAdded(callback: ConstraintAddedCallback): void { this.callbacks.onConstraintAdded(callback); }
+  onConstraintRemoved(callback: ConstraintRemovedCallback): void { this.callbacks.onConstraintRemoved(callback); }
+  onConstraintUpdated(callback: ConstraintUpdatedCallback): void { this.callbacks.onConstraintUpdated(callback); }
+  onMeshBinary(callback: MeshBinaryCallback): void { this.callbacks.onMeshBinary(callback); }
+  onGeometryDef(callback: GeometryDefCallback): void { this.callbacks.onGeometryDef(callback); }
+  onMeshRef(callback: MeshRefCallback): void { this.callbacks.onMeshRef(callback); }
+  onMaterialDef(callback: MaterialDefCallback): void { this.callbacks.onMaterialDef(callback); }
+  onTextureDef(callback: TextureDefCallback): void { this.callbacks.onTextureDef(callback); }
 
-  onBodyRemoved(callback: BodyRemovedCallback): void {
-    this.bodyRemovedCallbacks.push(callback);
-  }
-
-  onSimulationStarted(callback: SimulationStartedCallback): void {
-    this.simulationStartedCallbacks.push(callback);
-  }
-
-  onCollisionEvents(callback: CollisionEventsCallback): void {
-    this.collisionEventsCallbacks.push(callback);
-  }
-
-  onConstraintAdded(callback: ConstraintAddedCallback): void {
-    this.constraintAddedCallbacks.push(callback);
-  }
-
-  onConstraintRemoved(callback: ConstraintRemovedCallback): void {
-    this.constraintRemovedCallbacks.push(callback);
-  }
-
-  onConstraintUpdated(callback: ConstraintUpdatedCallback): void {
-    this.constraintUpdatedCallbacks.push(callback);
-  }
-
-  onMeshBinary(callback: MeshBinaryCallback): void {
-    this.meshBinaryCallbacks.push(callback);
-  }
-
-  onGeometryDef(callback: GeometryDefCallback): void {
-    this.geometryDefCallbacks.push(callback);
-  }
-
-  onMeshRef(callback: MeshRefCallback): void {
-    this.meshRefCallbacks.push(callback);
-  }
-
-  onMaterialDef(callback: MaterialDefCallback): void {
-    this.materialDefCallbacks.push(callback);
-  }
-
-  onTextureDef(callback: TextureDefCallback): void {
-    this.textureDefCallbacks.push(callback);
-  }
+  // --- Binary send methods ---
 
   /** Send pre-encoded binary mesh data directly over the WebSocket (no msgpackr wrapping). */
-  sendMeshBinary(encoded: Uint8Array): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this._bytesSent += encoded.byteLength;
-      this.ws.send(encoded);
-    }
-  }
-
+  sendMeshBinary(encoded: Uint8Array): void { this.sendRaw(encoded); }
   /** Send pre-encoded GEOMETRY_DEF directly over the WebSocket. */
-  sendGeometryDef(encoded: Uint8Array): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this._bytesSent += encoded.byteLength;
-      this.ws.send(encoded);
-    }
-  }
-
+  sendGeometryDef(encoded: Uint8Array): void { this.sendRaw(encoded); }
   /** Send pre-encoded MESH_REF directly over the WebSocket. */
-  sendMeshRef(encoded: Uint8Array): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this._bytesSent += encoded.byteLength;
-      this.ws.send(encoded);
-    }
-  }
-
+  sendMeshRef(encoded: Uint8Array): void { this.sendRaw(encoded); }
   /** Send pre-encoded MATERIAL_DEF directly over the WebSocket. */
-  sendMaterialDef(encoded: Uint8Array): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this._bytesSent += encoded.byteLength;
-      this.ws.send(encoded);
-    }
-  }
-
+  sendMaterialDef(encoded: Uint8Array): void { this.sendRaw(encoded); }
   /** Send pre-encoded TEXTURE_DEF directly over the WebSocket. */
-  sendTextureDef(encoded: Uint8Array): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this._bytesSent += encoded.byteLength;
-      this.ws.send(encoded);
-    }
-  }
+  sendTextureDef(encoded: Uint8Array): void { this.sendRaw(encoded); }
 
-  // --- Async shape query methods ---
+  // --- Shape queries ---
 
   shapeCastQuery(
     shape: ShapeDescriptor,
@@ -415,11 +276,7 @@ export class PhysicsSyncClient {
     rotation: Quat,
     ignoreBodyId?: string,
   ): Promise<ShapeCastResponse> {
-    const queryId = this.nextQueryId++;
-    return this.sendQuery(queryId, {
-      type: MessageType.SHAPE_CAST_REQUEST,
-      request: { queryId, shape, startPosition, endPosition, rotation, ignoreBodyId },
-    }) as Promise<ShapeCastResponse>;
+    return this.queries.shapeCastQuery(shape, startPosition, endPosition, rotation, ignoreBodyId);
   }
 
   shapeProximityQuery(
@@ -429,11 +286,7 @@ export class PhysicsSyncClient {
     maxDistance: number,
     ignoreBodyId?: string,
   ): Promise<ShapeProximityResponse> {
-    const queryId = this.nextQueryId++;
-    return this.sendQuery(queryId, {
-      type: MessageType.SHAPE_PROXIMITY_REQUEST,
-      request: { queryId, shape, position, rotation, maxDistance, ignoreBodyId },
-    }) as Promise<ShapeProximityResponse>;
+    return this.queries.shapeProximityQuery(shape, position, rotation, maxDistance, ignoreBodyId);
   }
 
   pointProximityQuery(
@@ -441,46 +294,10 @@ export class PhysicsSyncClient {
     maxDistance: number,
     ignoreBodyId?: string,
   ): Promise<PointProximityResponse> {
-    const queryId = this.nextQueryId++;
-    return this.sendQuery(queryId, {
-      type: MessageType.POINT_PROXIMITY_REQUEST,
-      request: { queryId, position, maxDistance, ignoreBodyId },
-    }) as Promise<PointProximityResponse>;
+    return this.queries.pointProximityQuery(position, maxDistance, ignoreBodyId);
   }
 
-  private sendQuery(queryId: number, message: ClientMessage): Promise<unknown> {
-    return new Promise((resolve, reject) => {
-      if (!this.ws) {
-        reject(new Error('Not connected'));
-        return;
-      }
-
-      const timer = setTimeout(() => {
-        this.pendingQueries.delete(queryId);
-        reject(new Error(`Query ${queryId} timed out`));
-      }, 5000);
-
-      this.pendingQueries.set(queryId, { resolve, reject, timer });
-      this.send(message);
-    });
-  }
-
-  private resolveQuery(queryId: number, response: unknown): void {
-    const pending = this.pendingQueries.get(queryId);
-    if (pending) {
-      clearTimeout(pending.timer);
-      this.pendingQueries.delete(queryId);
-      pending.resolve(response);
-    }
-  }
-
-  private cleanupPendingQueries(): void {
-    for (const [, pending] of this.pendingQueries) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error('Disconnected'));
-    }
-    this.pendingQueries.clear();
-  }
+  // --- Simulation control & getters ---
 
   startSimulation(): void {
     if (!this.ws) return;
@@ -488,276 +305,24 @@ export class PhysicsSyncClient {
   }
 
   get simulationRunning(): boolean {
-    return this._simulationRunning;
+    return this.mutableState.simulationRunning;
   }
 
   /** Total number of bodies the client knows about (including sleeping/unchanged ones) */
   get totalBodyCount(): number {
-    return this.fullStateMap.size;
+    return this.bodyState.fullStateMap.size;
   }
 
   disconnect(): void {
     this.clockSync.stop();
     this.inputManager.stop();
     this.reconciler.clear();
-    this.fullStateMap.clear();
-    this.indexToId.clear();
-    this.idToIndex.clear();
-    this.cleanupPendingQueries();
+    this.bodyState.clear();
+    this.queries.cleanup();
     this.ws?.close();
     this.ws = null;
-    this.roomId = null;
-    this.clientId = null;
-  }
-
-  private initBodyIdMap(bodyIdMap: Record<string, number>): void {
-    this.indexToId.clear();
-    this.idToIndex.clear();
-    for (const [id, index] of Object.entries(bodyIdMap)) {
-      this.indexToId.set(index, id);
-      this.idToIndex.set(id, index);
-    }
-  }
-
-  private addBodyIdMapping(id: string, index: number): void {
-    this.indexToId.set(index, id);
-    this.idToIndex.set(id, index);
-  }
-
-  private initFullState(bodies: BodyState[]): void {
-    this.fullStateMap.clear();
-    for (const body of bodies) {
-      this.fullStateMap.set(body.id, { ...body });
-    }
-  }
-
-  /**
-   * Merge partial delta bodies into the full state map.
-   * Returns the merged (complete) body states for the bodies that were in the delta.
-   */
-  private mergeDelta(bodies: BodyState[]): BodyState[] {
-    const merged: BodyState[] = [];
-    for (const body of bodies) {
-      const existing = this.fullStateMap.get(body.id);
-      if (existing) {
-        const mask = body.fieldMask;
-        if (mask !== undefined) {
-          if (mask & FIELD_POSITION) existing.position = body.position;
-          if (mask & FIELD_ROTATION) existing.rotation = body.rotation;
-          if (mask & FIELD_LIN_VEL) existing.linVel = body.linVel;
-          if (mask & FIELD_ANG_VEL) existing.angVel = body.angVel;
-        } else {
-          // No fieldMask = full update
-          existing.position = body.position;
-          existing.rotation = body.rotation;
-          existing.linVel = body.linVel;
-          existing.angVel = body.angVel;
-        }
-        merged.push(existing);
-      } else {
-        // New body — add to map
-        const newBody: BodyState = { ...body };
-        delete newBody.fieldMask;
-        this.fullStateMap.set(body.id, newBody);
-        merged.push(newBody);
-      }
-    }
-    return merged;
-  }
-
-  private handleMessage(message: ServerMessage): void {
-    switch (message.type) {
-      case MessageType.CLOCK_SYNC_RESPONSE:
-        this.clockSync.handleResponse(message);
-        break;
-
-      case MessageType.ROOM_CREATED:
-        this.createResolve?.();
-        this.createResolve = null;
-        break;
-
-      case MessageType.ROOM_JOINED:
-        this.roomId = message.roomId;
-        this.clientId = message.clientId;
-        this._simulationRunning = message.simulationRunning;
-
-        // Initialize body ID mapping
-        if (message.bodyIdMap) {
-          this.initBodyIdMap(message.bodyIdMap);
-        }
-
-        // Initialize full state from snapshot
-        this.initFullState(message.snapshot.bodies);
-
-        // Seed the reconciler/interpolator with the initial snapshot so late-joiners
-        // have valid positions for all bodies immediately (including static bodies
-        // that may never appear in a ROOM_STATE delta).
-        this.reconciler.processServerState(message.snapshot);
-
-        // Start input manager
-        this.inputManager.start(
-          (input) => this.sendClientInput(input),
-          () => this.clockSync.getServerTick()
-        );
-
-        // Notify about existing constraints
-        if (message.constraints) {
-          for (const c of message.constraints) {
-            for (const cb of this.constraintAddedCallbacks) {
-              cb(c);
-            }
-          }
-        }
-
-        // Replay body descriptors for late joiners
-        if (message.bodies) {
-          for (const b of message.bodies) {
-            if (message.bodyIdMap && message.bodyIdMap[b.id] !== undefined) {
-              this.addBodyIdMapping(b.id, message.bodyIdMap[b.id]);
-            }
-            for (const cb of this.bodyAddedCallbacks) {
-              cb(b);
-            }
-          }
-        }
-
-        this.joinResolve?.(message.snapshot);
-        this.joinResolve = null;
-        break;
-
-      case MessageType.ROOM_STATE: {
-        // Merge partial delta into full state map
-        const mergedBodies = this.mergeDelta(message.bodies);
-
-        const snapshot: RoomSnapshot = {
-          tick: message.tick,
-          timestamp: message.timestamp,
-          bodies: mergedBodies,
-        };
-
-        // Process through reconciler
-        this.reconciler.processServerState(snapshot);
-
-        // Notify listeners
-        for (const cb of this.stateUpdateCallbacks) {
-          cb(snapshot);
-        }
-        break;
-      }
-
-      case MessageType.ADD_BODY:
-        // Update body ID mapping
-        if (message.bodyIndex !== undefined) {
-          this.addBodyIdMapping(message.body.id, message.bodyIndex);
-        }
-        for (const cb of this.bodyAddedCallbacks) {
-          cb(message.body);
-        }
-        break;
-
-      case MessageType.REMOVE_BODY:
-        this.fullStateMap.delete(message.bodyId);
-        for (const cb of this.bodyRemovedCallbacks) {
-          cb(message.bodyId);
-        }
-        break;
-
-      case MessageType.SIMULATION_STARTED: {
-        this._simulationRunning = true;
-        this.reconciler.clear();
-
-        // Re-initialize body ID mapping if provided
-        const simMsg = message as ServerMessage & { bodyIdMap?: Record<string, number> };
-        if (simMsg.bodyIdMap) {
-          this.initBodyIdMap(simMsg.bodyIdMap);
-        }
-
-        // Re-initialize full state from fresh snapshot
-        this.initFullState(message.snapshot.bodies);
-
-        // Notify about constraints included in reset
-        const simConstraints = (message as ServerMessage & { constraints?: ConstraintDescriptor[] }).constraints;
-        if (simConstraints) {
-          for (const c of simConstraints) {
-            for (const cb of this.constraintAddedCallbacks) {
-              cb(c);
-            }
-          }
-        }
-
-        // Replay body descriptors included in reset
-        const simBodies = (message as ServerMessage & { bodies?: BodyDescriptor[] }).bodies;
-        if (simBodies) {
-          for (const b of simBodies) {
-            for (const cb of this.bodyAddedCallbacks) {
-              cb(b);
-            }
-          }
-        }
-
-        const startSnapshot = message.snapshot;
-        for (const cb of this.simulationStartedCallbacks) {
-          cb(startSnapshot);
-        }
-        break;
-      }
-
-      case MessageType.COLLISION_EVENTS:
-        for (const cb of this.collisionEventsCallbacks) {
-          cb(message.events);
-        }
-        break;
-
-      case MessageType.ADD_CONSTRAINT:
-        for (const cb of this.constraintAddedCallbacks) {
-          cb(message.constraint);
-        }
-        break;
-
-      case MessageType.REMOVE_CONSTRAINT:
-        for (const cb of this.constraintRemovedCallbacks) {
-          cb(message.constraintId);
-        }
-        break;
-
-      case MessageType.UPDATE_CONSTRAINT:
-        for (const cb of this.constraintUpdatedCallbacks) {
-          cb(message.constraintId, message.updates);
-        }
-        break;
-
-      case MessageType.SHAPE_CAST_RESPONSE:
-        this.resolveQuery(message.response.queryId, message.response);
-        break;
-
-      case MessageType.SHAPE_PROXIMITY_RESPONSE:
-        this.resolveQuery(message.response.queryId, message.response);
-        break;
-
-      case MessageType.POINT_PROXIMITY_RESPONSE:
-        this.resolveQuery(message.response.queryId, message.response);
-        break;
-
-      case MessageType.ERROR:
-        console.error(`Server error: ${message.message}`);
-        break;
-    }
-  }
-
-  private sendClientInput(input: ClientInput): void {
-    this.reconciler.addPendingInput(input);
-    this.send({
-      type: MessageType.CLIENT_INPUT,
-      input,
-    });
-  }
-
-  private send(message: ClientMessage): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const encoded = encodeMessage(message);
-      this._bytesSent += encoded.byteLength;
-      this.ws.send(encoded);
-    }
+    this.mutableState.roomId = null;
+    this.mutableState.clientId = null;
   }
 
   getReconciler(): StateReconciler {
@@ -773,11 +338,11 @@ export class PhysicsSyncClient {
   }
 
   getClientId(): string | null {
-    return this.clientId;
+    return this.mutableState.clientId;
   }
 
   getRoomId(): string | null {
-    return this.roomId;
+    return this.mutableState.roomId;
   }
 
   get bytesSent(): number {
@@ -786,5 +351,22 @@ export class PhysicsSyncClient {
 
   get bytesReceived(): number {
     return this._bytesReceived;
+  }
+
+  // --- Private ---
+
+  private send(message: ClientMessage): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      const encoded = encodeMessage(message);
+      this._bytesSent += encoded.byteLength;
+      this.ws.send(encoded);
+    }
+  }
+
+  private sendRaw(encoded: Uint8Array): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this._bytesSent += encoded.byteLength;
+      this.ws.send(encoded);
+    }
   }
 }
