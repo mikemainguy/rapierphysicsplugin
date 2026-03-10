@@ -29,7 +29,7 @@ function flashMeshOnCollision(mesh: Mesh): void {
   const originalColor = mat.diffuseColor.clone();
   mat.diffuseColor = FLASH_COLOR;
   setTimeout(() => {
-    if (!mat.isDisposed()) mat.diffuseColor = originalColor;
+    try { mat.diffuseColor = originalColor; } catch { /* disposed */ }
   }, FLASH_DURATION_MS);
 }
 
@@ -164,12 +164,16 @@ async function main() {
   const spawnBoxesInput = document.getElementById('spawnBoxes') as HTMLInputElement;
   const spawnSpheresInput = document.getElementById('spawnSpheres') as HTMLInputElement;
   const spawnCapsulesInput = document.getElementById('spawnCapsules') as HTMLInputElement;
+  const spawnCylindersInput = document.getElementById('spawnCylinders') as HTMLInputElement;
+  const spawnConesInput = document.getElementById('spawnCones') as HTMLInputElement;
 
   spawnButton.addEventListener('click', () => {
     const ts = Date.now();
     const numBoxes = Math.max(0, parseInt(spawnBoxesInput.value) || 0);
     const numSpheres = Math.max(0, parseInt(spawnSpheresInput.value) || 0);
     const numCapsules = Math.max(0, parseInt(spawnCapsulesInput.value) || 0);
+    const numCylinders = Math.max(0, parseInt(spawnCylindersInput.value) || 0);
+    const numCones = Math.max(0, parseInt(spawnConesInput.value) || 0);
 
     const randomPos = () => new Vector3(
       Math.random() * 10 - 5,
@@ -215,6 +219,35 @@ async function main() {
         pointB: new Vector3(0, 0.5, 0),
         radius: 0.3,
       }, scene);
+      enableCollisionFlash(agg, mesh);
+    }
+
+    for (let i = 0; i < numCylinders; i++) {
+      const id = `cylinder-${ts}-${i}`;
+      const mesh = MeshBuilder.CreateCylinder(id, { height: 1.2, diameter: 0.8 }, scene);
+      const mat = new StandardMaterial(`${id}Mat`, scene);
+      mat.diffuseColor = new Color3(0.9, 0.6, 0.1);
+      mat.specularColor = new Color3(0.3, 0.3, 0.3);
+      mesh.material = mat;
+      mesh.position = randomPos();
+      const agg = new PhysicsAggregate(mesh, PhysicsShapeType.CYLINDER, {
+        mass: 1, friction: 0.5, restitution: 0.3,
+        pointA: new Vector3(0, -0.6, 0),
+        pointB: new Vector3(0, 0.6, 0),
+        radius: 0.4,
+      }, scene);
+      enableCollisionFlash(agg, mesh);
+    }
+
+    for (let i = 0; i < numCones; i++) {
+      const id = `cone-${ts}-${i}`;
+      const mesh = MeshBuilder.CreateCylinder(id, { height: 1.2, diameterTop: 0, diameterBottom: 0.8, tessellation: 16 }, scene);
+      const mat = new StandardMaterial(`${id}Mat`, scene);
+      mat.diffuseColor = new Color3(0.8, 0.2, 0.8);
+      mat.specularColor = new Color3(0.3, 0.3, 0.3);
+      mesh.material = mat;
+      mesh.position = randomPos();
+      const agg = new PhysicsAggregate(mesh, PhysicsShapeType.CONVEX_HULL, { mass: 1, friction: 0.5, restitution: 0.3 }, scene);
       enableCollisionFlash(agg, mesh);
     }
   });

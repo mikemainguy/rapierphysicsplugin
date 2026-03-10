@@ -13,6 +13,7 @@ import type {
 import type {
   BodyDescriptor,
   ShapeDescriptor,
+  ContainerChildShape,
 } from '@rapierphysicsplugin/shared';
 import type { NetworkedPluginState, PendingBodyInfo, CachedShapeInfo } from './networked-plugin-types.js';
 import { motionTypeToWire } from './networked-plugin-types.js';
@@ -74,6 +75,12 @@ export function onSetShape(
           if (descriptor) {
             state.syncClient.addBody(descriptor);
             sendMesh(body, bodyId);
+          } else {
+            // Body can't be serialized — unregister so it doesn't freeze
+            console.error(`[RapierPlugin] Failed to serialize body "${bodyId}" (shape type: ${shapeInfo.type}) — unregistering`);
+            state.bodyToId.delete(body);
+            state.idToBody.delete(bodyId);
+            state.bodyIdToPhysicsBody.delete(bodyId);
           }
         }
       });
@@ -177,7 +184,7 @@ export function buildDescriptor(
   shape: PhysicsShape,
 ): BodyDescriptor | null {
   const wireMotion = motionTypeToWire(pending.motionType);
-  const shapeDescriptor = shapeInfoToDescriptor(shapeInfo);
+  const shapeDescriptor = shapeInfoToDescriptor(shapeInfo, state, shape);
   if (!shapeDescriptor) return null;
 
   const material = state.shapeMaterialMap.get(shape) ?? { friction: undefined, restitution: undefined };
@@ -199,7 +206,11 @@ export function buildDescriptor(
   };
 }
 
-export function shapeInfoToDescriptor(shapeInfo: CachedShapeInfo): ShapeDescriptor | null {
+export function shapeInfoToDescriptor(
+  shapeInfo: CachedShapeInfo,
+  state?: NetworkedPluginState,
+  parentShape?: PhysicsShape,
+): ShapeDescriptor | null {
   const { type, options } = shapeInfo;
 
   switch (type) {
@@ -221,6 +232,13 @@ export function shapeInfoToDescriptor(shapeInfo: CachedShapeInfo): ShapeDescript
       const radius = options.radius ?? 0.5;
       return { type: 'capsule', params: { halfHeight, radius } };
     }
+    case PhysicsShapeType.CYLINDER: {
+      const pointA = options.pointA ?? new Vector3(0, 0, 0);
+      const pointB = options.pointB ?? new Vector3(0, 1, 0);
+      const halfHeight = Vector3.Distance(pointA, pointB) / 2;
+      const radius = options.radius ?? 0.5;
+      return { type: 'cylinder', params: { halfHeight, radius } };
+    }
     case PhysicsShapeType.MESH: {
       const mesh = options.mesh;
       if (mesh) {
@@ -234,6 +252,77 @@ export function shapeInfoToDescriptor(shapeInfo: CachedShapeInfo): ShapeDescript
         }
       }
       return null;
+    }
+    case PhysicsShapeType.CONVEX_HULL: {
+      const mesh = options.mesh;
+      if (mesh) {
+        const positions = mesh.getVerticesData('position');
+        if (positions) {
+          return {
+            type: 'convex_hull',
+            params: { vertices: new Float32Array(positions) },
+          };
+        }
+      }
+      return null;
+    }
+    case PhysicsShapeType.HEIGHTFIELD: {
+      let heights = options.heightFieldData;
+      let numSamplesX = options.numHeightFieldSamplesX ?? 2;
+      let numSamplesZ = options.numHeightFieldSamplesZ ?? 2;
+      let sizeX = options.heightFieldSizeX ?? 1;
+      let sizeZ = options.heightFieldSizeZ ?? 1;
+
+      if (!heights && options.groundMesh) {
+        const gm = options.groundMesh as any;
+        const subdivX = (gm._subdivisionsX ?? gm.subdivisionsX ?? 1) + 1;
+        const subdivZ = (gm._subdivisionsY ?? gm.subdivisionsY ?? 1) + 1;
+        numSamplesX = subdivX;
+        numSamplesZ = subdivZ;
+        const positions = gm.getVerticesData('position');
+        if (positions) {
+          heights = new Float32Array(subdivX * subdivZ);
+          for (let z = 0; z < subdivZ; z++) {
+            for (let x = 0; x < subdivX; x++) {
+              const idx = (z * subdivX + x) * 3;
+              heights[z * subdivX + x] = positions[idx + 1];
+            }
+          }
+          const bb = gm.getBoundingInfo().boundingBox;
+          sizeX = bb.maximum.x - bb.minimum.x;
+          sizeZ = bb.maximum.z - bb.minimum.z;
+        }
+      }
+
+      if (heights) {
+        return {
+          type: 'heightfield',
+          params: { heights, numSamplesX, numSamplesZ, sizeX, sizeZ },
+        };
+      }
+      return null;
+    }
+    case PhysicsShapeType.CONTAINER: {
+      if (!state || !parentShape) return null;
+      const children = state.compoundChildren.get(parentShape) ?? [];
+      const wireChildren: ContainerChildShape[] = [];
+      for (const entry of children) {
+        const childInfo = state.shapeParamsCache.get(entry.child);
+        if (!childInfo) continue;
+        const childDesc = shapeInfoToDescriptor(childInfo, state, entry.child);
+        if (!childDesc) continue;
+        wireChildren.push({
+          shape: childDesc,
+          translation: entry.translation
+            ? { x: entry.translation.x, y: entry.translation.y, z: entry.translation.z }
+            : undefined,
+          rotation: entry.rotation
+            ? { x: entry.rotation.x, y: entry.rotation.y, z: entry.rotation.z, w: entry.rotation.w }
+            : undefined,
+        });
+      }
+      if (wireChildren.length === 0) return null;
+      return { type: 'container', params: { children: wireChildren } };
     }
     default:
       return null;

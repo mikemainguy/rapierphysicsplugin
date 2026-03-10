@@ -46,10 +46,10 @@ export function initShape(state: RapierPluginState, shape: PhysicsShape, type: P
         const positions = mesh.getVerticesData('position');
         const indices = mesh.getIndices();
         if (positions && indices) {
-          colliderDesc = state.rapier.ColliderDesc.trimesh(
-            new Float32Array(positions),
-            new Uint32Array(indices)
-          );
+          const verts = new Float32Array(positions);
+          const idx = new Uint32Array(indices);
+          colliderDesc = state.rapier.ColliderDesc.trimesh(verts, idx);
+          state.shapeRawData.set(shape, { vertices: verts, indices: idx });
         } else {
           colliderDesc = state.rapier.ColliderDesc.ball(0.5);
         }
@@ -63,8 +63,10 @@ export function initShape(state: RapierPluginState, shape: PhysicsShape, type: P
       if (mesh) {
         const positions = mesh.getVerticesData('position');
         if (positions) {
-          const desc = state.rapier.ColliderDesc.convexHull(new Float32Array(positions));
+          const verts = new Float32Array(positions);
+          const desc = state.rapier.ColliderDesc.convexHull(verts);
           colliderDesc = desc ?? state.rapier.ColliderDesc.ball(0.5);
+          state.shapeRawData.set(shape, { vertices: verts });
         } else {
           colliderDesc = state.rapier.ColliderDesc.ball(0.5);
         }
@@ -78,11 +80,36 @@ export function initShape(state: RapierPluginState, shape: PhysicsShape, type: P
       break;
     }
     case PhysicsShapeType.HEIGHTFIELD: {
-      const heights = options.heightFieldData;
-      const nrows = (options.numHeightFieldSamplesX ?? 2) - 1;
-      const ncols = (options.numHeightFieldSamplesZ ?? 2) - 1;
-      const sizeX = options.heightFieldSizeX ?? 1;
-      const sizeZ = options.heightFieldSizeZ ?? 1;
+      let heights = options.heightFieldData;
+      let numSamplesX = options.numHeightFieldSamplesX ?? 2;
+      let numSamplesZ = options.numHeightFieldSamplesZ ?? 2;
+      let sizeX = options.heightFieldSizeX ?? 1;
+      let sizeZ = options.heightFieldSizeZ ?? 1;
+
+      // Support PhysicsShapeGroundMesh: extract height data from groundMesh
+      if (!heights && options.groundMesh) {
+        const gm = options.groundMesh as any;
+        const subdivX = (gm._subdivisionsX ?? gm.subdivisionsX ?? 1) + 1;
+        const subdivZ = (gm._subdivisionsY ?? gm.subdivisionsY ?? 1) + 1;
+        numSamplesX = subdivX;
+        numSamplesZ = subdivZ;
+        const positions = gm.getVerticesData('position');
+        if (positions) {
+          heights = new Float32Array(subdivX * subdivZ);
+          for (let z = 0; z < subdivZ; z++) {
+            for (let x = 0; x < subdivX; x++) {
+              const idx = (z * subdivX + x) * 3;
+              heights[z * subdivX + x] = positions[idx + 1]; // y component
+            }
+          }
+          const bb = gm.getBoundingInfo().boundingBox;
+          sizeX = bb.maximum.x - bb.minimum.x;
+          sizeZ = bb.maximum.z - bb.minimum.z;
+        }
+      }
+
+      const nrows = numSamplesX - 1;
+      const ncols = numSamplesZ - 1;
       if (heights) {
         colliderDesc = state.rapier.ColliderDesc.heightfield(
           nrows,
@@ -90,6 +117,7 @@ export function initShape(state: RapierPluginState, shape: PhysicsShape, type: P
           heights,
           new state.rapier.Vector3(sizeX, 1, sizeZ)
         );
+        state.shapeRawData.set(shape, { heights, nrows, ncols, sizeX, sizeZ });
       } else {
         colliderDesc = state.rapier.ColliderDesc.ball(0.5);
       }
@@ -152,6 +180,7 @@ export function disposeShape(state: RapierPluginState, shape: PhysicsShape): voi
   state.triggerShapes.delete(shape);
   state.compoundChildren.delete(shape);
   state.shapeToBody.delete(shape);
+  state.shapeRawData.delete(shape);
 }
 
 export function setMaterial(state: RapierPluginState, shape: PhysicsShape, material: PhysicsMaterial): void {
@@ -327,6 +356,17 @@ function computeColliderBoundingBox(state: RapierPluginState, collider: RAPIER.C
       new Vector3(t.x - r, t.y - hh, t.z - r),
       new Vector3(t.x + r, t.y + hh, t.z + r)
     );
+  } else if (shapeType === RAPIER.ShapeType.ConvexPolyhedron
+    || shapeType === RAPIER.ShapeType.TriMesh
+    || shapeType === RAPIER.ShapeType.HeightField) {
+    // Use Rapier's AABB computation for complex shapes
+    const aabb = (collider as any).aabb();
+    if (aabb) {
+      return new BoundingBox(
+        new Vector3(aabb.mins.x, aabb.mins.y, aabb.mins.z),
+        new Vector3(aabb.maxs.x, aabb.maxs.y, aabb.maxs.z)
+      );
+    }
   }
 
   return new BoundingBox(

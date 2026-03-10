@@ -208,6 +208,29 @@ export class PhysicsServer {
         const room = this.roomManager.getRoom(conn.roomId);
         if (room) {
           try {
+            const shape = message.body.shape;
+            console.log(`[ADD_BODY] id=${message.body.id} shape.type=${shape.type}`);
+            if (shape.type === 'convex_hull' || shape.type === 'mesh' || shape.type === 'heightfield') {
+              const params = shape.params as unknown as Record<string, unknown>;
+              for (const [key, val] of Object.entries(params)) {
+                if (val && typeof val === 'object') {
+                  console.log(`[ADD_BODY]   params.${key}: type=${Object.prototype.toString.call(val)} constructor=${(val as any)?.constructor?.name} instanceof_F32=${val instanceof Float32Array} instanceof_U32=${val instanceof Uint32Array} isView=${ArrayBuffer.isView(val)}`);
+                }
+              }
+            }
+            if (shape.type === 'container') {
+              const cp = shape.params as unknown as { children: Array<{ shape: { type: string; params: Record<string, unknown> } }> };
+              for (const child of cp.children) {
+                if (child.shape.type === 'convex_hull' || child.shape.type === 'mesh') {
+                  console.log(`[ADD_BODY]   container child shape.type=${child.shape.type}`);
+                  for (const [key, val] of Object.entries(child.shape.params)) {
+                    if (val && typeof val === 'object') {
+                      console.log(`[ADD_BODY]     params.${key}: type=${Object.prototype.toString.call(val)} constructor=${(val as any)?.constructor?.name} instanceof_F32=${val instanceof Float32Array}`);
+                    }
+                  }
+                }
+              }
+            }
             // If the client requested ownership, overwrite with the real sender ID
             // to prevent spoofing. If ownerId is not set, the body has no owner.
             if (message.body.ownerId) {
@@ -215,6 +238,7 @@ export class PhysicsServer {
             }
             room.addBody(message.body);
           } catch (err) {
+            console.error(`[ADD_BODY] Error adding body ${message.body.id}:`, err);
             conn.send(encodeMessage({
               type: MessageType.ERROR,
               message: (err as Error).message,

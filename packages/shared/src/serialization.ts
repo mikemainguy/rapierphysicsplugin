@@ -1,4 +1,32 @@
-import { pack, unpack } from 'msgpackr';
+import { pack, unpack, addExtension } from 'msgpackr';
+
+// Float32Array extension (type 0x14)
+addExtension({
+  type: 0x14,
+  Class: Float32Array,
+  pack(instance: Float32Array) {
+    return new Uint8Array(instance.buffer, instance.byteOffset, instance.byteLength);
+  },
+  unpack(buffer: Uint8Array) {
+    const aligned = new ArrayBuffer(buffer.byteLength);
+    new Uint8Array(aligned).set(buffer);
+    return new Float32Array(aligned);
+  },
+});
+
+// Uint32Array extension (type 0x15)
+addExtension({
+  type: 0x15,
+  Class: Uint32Array,
+  pack(instance: Uint32Array) {
+    return new Uint8Array(instance.buffer, instance.byteOffset, instance.byteLength);
+  },
+  unpack(buffer: Uint8Array) {
+    const aligned = new ArrayBuffer(buffer.byteLength);
+    new Uint8Array(aligned).set(buffer);
+    return new Uint32Array(aligned);
+  },
+});
 import type { ClientMessage, ServerMessage, RoomStateMessage, MeshBinaryMessage } from './protocol.js';
 import { MessageType } from './protocol.js';
 import { encodeRoomState, decodeRoomState } from './binary-state-codec.js';

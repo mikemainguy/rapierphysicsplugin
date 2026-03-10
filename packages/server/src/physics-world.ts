@@ -15,14 +15,68 @@ import type {
   ShapeProximityResponse,
   PointProximityRequest,
   PointProximityResponse,
+  ContainerShapeParams,
+  ContainerChildShape,
 } from '@rapierphysicsplugin/shared';
 import { FIXED_TIMESTEP, createJointData } from '@rapierphysicsplugin/shared';
+
+function toFloat32Array(data: unknown): Float32Array {
+  if (data instanceof Float32Array) {
+    console.log('[toFloat32Array] already Float32Array, length:', (data as Float32Array).length);
+    return data;
+  }
+  console.log('[toFloat32Array] received type:', Object.prototype.toString.call(data),
+    'constructor:', (data as any)?.constructor?.name,
+    'isView:', ArrayBuffer.isView(data),
+    'isArray:', Array.isArray(data));
+  if (ArrayBuffer.isView(data)) {
+    const view = data as Uint8Array;
+    console.log('[toFloat32Array] converting ArrayBufferView, byteLength:', view.byteLength, 'byteOffset:', view.byteOffset);
+    const aligned = new ArrayBuffer(view.byteLength);
+    new Uint8Array(aligned).set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+    const result = new Float32Array(aligned);
+    console.log('[toFloat32Array] result length:', result.length, 'first few values:', Array.from(result.slice(0, 5)));
+    return result;
+  }
+  if (Array.isArray(data)) {
+    console.log('[toFloat32Array] converting from Array, length:', data.length, 'first few:', data.slice(0, 5));
+    return new Float32Array(data);
+  }
+  console.log('[toFloat32Array] fallback conversion, data:', typeof data);
+  return new Float32Array(data as ArrayLike<number>);
+}
+
+function toUint32Array(data: unknown): Uint32Array {
+  if (data instanceof Uint32Array) {
+    console.log('[toUint32Array] already Uint32Array, length:', (data as Uint32Array).length);
+    return data;
+  }
+  console.log('[toUint32Array] received type:', Object.prototype.toString.call(data),
+    'constructor:', (data as any)?.constructor?.name,
+    'isView:', ArrayBuffer.isView(data),
+    'isArray:', Array.isArray(data));
+  if (ArrayBuffer.isView(data)) {
+    const view = data as Uint8Array;
+    console.log('[toUint32Array] converting ArrayBufferView, byteLength:', view.byteLength, 'byteOffset:', view.byteOffset);
+    const aligned = new ArrayBuffer(view.byteLength);
+    new Uint8Array(aligned).set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+    const result = new Uint32Array(aligned);
+    console.log('[toUint32Array] result length:', result.length, 'first few values:', Array.from(result.slice(0, 5)));
+    return result;
+  }
+  if (Array.isArray(data)) {
+    console.log('[toUint32Array] converting from Array, length:', data.length, 'first few:', data.slice(0, 5));
+    return new Uint32Array(data);
+  }
+  console.log('[toUint32Array] fallback conversion, data:', typeof data);
+  return new Uint32Array(data as ArrayLike<number>);
+}
 
 export class PhysicsWorld {
   private world: RAPIER.World;
   private rapier: typeof RAPIER;
   private bodyMap: Map<string, RAPIER.RigidBody> = new Map();
-  private colliderMap: Map<string, RAPIER.Collider> = new Map();
+  private colliderMap: Map<string, RAPIER.Collider[]> = new Map();
   private colliderHandleToBodyId: Map<number, string> = new Map();
   private constraintMap: Map<string, RAPIER.ImpulseJoint> = new Map();
   private activeCollisionPairs: Set<string> = new Set();
@@ -62,62 +116,61 @@ export class PhysicsWorld {
 
     const rigidBody = world.createRigidBody(bodyDesc);
 
-    // Create collider
-    let colliderDesc: RAPIER.ColliderDesc;
-    switch (shape.type) {
-      case 'box': {
-        const p = shape.params as { halfExtents: Vec3 };
-        colliderDesc = rapier.ColliderDesc.cuboid(
-          p.halfExtents.x,
-          p.halfExtents.y,
-          p.halfExtents.z
+    // Create collider(s)
+    const applyColliderProps = (desc: RAPIER.ColliderDesc): void => {
+      if (centerOfMass !== undefined && motionType === 'dynamic') {
+        const m = mass ?? 1.0;
+        desc.setMassProperties(
+          m,
+          { x: centerOfMass.x, y: centerOfMass.y, z: centerOfMass.z },
+          { x: m / 6, y: m / 6, z: m / 6 },
+          { x: 0, y: 0, z: 0, w: 1 },
         );
-        break;
+      } else if (mass !== undefined && motionType === 'dynamic') {
+        desc.setMass(mass);
       }
-      case 'sphere': {
-        const p = shape.params as { radius: number };
-        colliderDesc = rapier.ColliderDesc.ball(p.radius);
-        break;
+      if (restitution !== undefined) {
+        desc.setRestitution(restitution);
       }
-      case 'capsule': {
-        const p = shape.params as { halfHeight: number; radius: number };
-        colliderDesc = rapier.ColliderDesc.capsule(p.halfHeight, p.radius);
-        break;
+      if (friction !== undefined) {
+        desc.setFriction(friction);
       }
-      case 'mesh': {
-        const p = shape.params as { vertices: Float32Array; indices: Uint32Array };
-        colliderDesc = rapier.ColliderDesc.trimesh(p.vertices, p.indices);
-        break;
+      if (isTrigger) {
+        desc.setSensor(true);
       }
-    }
+      desc.setActiveEvents(rapier.ActiveEvents.COLLISION_EVENTS);
+    };
 
-    if (centerOfMass !== undefined && motionType === 'dynamic') {
-      const m = mass ?? 1.0;
-      colliderDesc.setMassProperties(
-        m,
-        { x: centerOfMass.x, y: centerOfMass.y, z: centerOfMass.z },
-        { x: m / 6, y: m / 6, z: m / 6 },
-        { x: 0, y: 0, z: 0, w: 1 },
-      );
-    } else if (mass !== undefined && motionType === 'dynamic') {
-      colliderDesc.setMass(mass);
-    }
-    if (restitution !== undefined) {
-      colliderDesc.setRestitution(restitution);
-    }
-    if (friction !== undefined) {
-      colliderDesc.setFriction(friction);
-    }
-    if (isTrigger) {
-      colliderDesc.setSensor(true);
-    }
-    colliderDesc.setActiveEvents(rapier.ActiveEvents.COLLISION_EVENTS);
+    const colliders: RAPIER.Collider[] = [];
 
-    const collider = world.createCollider(colliderDesc, rigidBody);
+    if (shape.type === 'container') {
+      const cp = shape.params as ContainerShapeParams;
+      for (const child of cp.children) {
+        const childDesc = this.createColliderDesc(child.shape);
+        if (!childDesc) continue;
+        if (child.translation) {
+          childDesc.setTranslation(child.translation.x, child.translation.y, child.translation.z);
+        }
+        if (child.rotation) {
+          childDesc.setRotation(new rapier.Quaternion(child.rotation.x, child.rotation.y, child.rotation.z, child.rotation.w));
+        }
+        applyColliderProps(childDesc);
+        const col = world.createCollider(childDesc, rigidBody);
+        this.colliderHandleToBodyId.set(col.handle, id);
+        colliders.push(col);
+      }
+    } else {
+      const colliderDesc = this.createColliderDesc(shape);
+      if (colliderDesc) {
+        applyColliderProps(colliderDesc);
+        const col = world.createCollider(colliderDesc, rigidBody);
+        this.colliderHandleToBodyId.set(col.handle, id);
+        colliders.push(col);
+      }
+    }
 
     this.bodyMap.set(id, rigidBody);
-    this.colliderMap.set(id, collider);
-    this.colliderHandleToBodyId.set(collider.handle, id);
+    this.colliderMap.set(id, colliders);
 
     return id;
   }
@@ -126,9 +179,11 @@ export class PhysicsWorld {
     const body = this.bodyMap.get(id);
     if (!body) return;
 
-    const collider = this.colliderMap.get(id);
-    if (collider) {
-      this.colliderHandleToBodyId.delete(collider.handle);
+    const colliders = this.colliderMap.get(id);
+    if (colliders) {
+      for (const col of colliders) {
+        this.colliderHandleToBodyId.delete(col.handle);
+      }
     }
 
     this.world.removeRigidBody(body);
@@ -501,6 +556,62 @@ export class PhysicsWorld {
 
   // --- Shape query methods ---
 
+  private createColliderDesc(shape: ShapeDescriptor): RAPIER.ColliderDesc | null {
+    const { rapier } = this;
+    switch (shape.type) {
+      case 'box': {
+        const p = shape.params as { halfExtents: Vec3 };
+        return rapier.ColliderDesc.cuboid(p.halfExtents.x, p.halfExtents.y, p.halfExtents.z);
+      }
+      case 'sphere': {
+        const p = shape.params as { radius: number };
+        return rapier.ColliderDesc.ball(p.radius);
+      }
+      case 'capsule': {
+        const p = shape.params as { halfHeight: number; radius: number };
+        return rapier.ColliderDesc.capsule(p.halfHeight, p.radius);
+      }
+      case 'cylinder': {
+        const p = shape.params as { halfHeight: number; radius: number };
+        return rapier.ColliderDesc.cylinder(p.halfHeight, p.radius);
+      }
+      case 'mesh': {
+        const p = shape.params as { vertices: Float32Array; indices: Uint32Array };
+        console.log('[createColliderDesc] mesh — vertices type:', Object.prototype.toString.call(p.vertices),
+          'constructor:', (p.vertices as any)?.constructor?.name,
+          'indices type:', Object.prototype.toString.call(p.indices),
+          'constructor:', (p.indices as any)?.constructor?.name);
+        return rapier.ColliderDesc.trimesh(toFloat32Array(p.vertices), toUint32Array(p.indices));
+      }
+      case 'convex_hull': {
+        const p = shape.params as { vertices: Float32Array };
+        console.log('[createColliderDesc] convex_hull — vertices type:', Object.prototype.toString.call(p.vertices),
+          'constructor:', (p.vertices as any)?.constructor?.name,
+          'instanceof Float32Array:', p.vertices instanceof Float32Array,
+          'byteLength:', (p.vertices as any)?.byteLength,
+          'length:', (p.vertices as any)?.length);
+        if (p.vertices && typeof p.vertices === 'object' && !Array.isArray(p.vertices) && !(p.vertices instanceof Float32Array) && !ArrayBuffer.isView(p.vertices)) {
+          console.log('[createColliderDesc] convex_hull — vertices keys:', Object.keys(p.vertices).slice(0, 10),
+            'sample values:', JSON.stringify(p.vertices).slice(0, 200));
+        }
+        const converted = toFloat32Array(p.vertices);
+        console.log('[createColliderDesc] convex_hull — converted instanceof Float32Array:', converted instanceof Float32Array,
+          'length:', converted.length, 'first 6 values:', Array.from(converted.slice(0, 6)));
+        return rapier.ColliderDesc.convexHull(converted) ?? null;
+      }
+      case 'heightfield': {
+        const p = shape.params as { heights: Float32Array; numSamplesX: number; numSamplesZ: number; sizeX: number; sizeZ: number };
+        const nrows = p.numSamplesX - 1;
+        const ncols = p.numSamplesZ - 1;
+        console.log('[createColliderDesc] heightfield — heights type:', Object.prototype.toString.call(p.heights),
+          'constructor:', (p.heights as any)?.constructor?.name);
+        return rapier.ColliderDesc.heightfield(nrows, ncols, toFloat32Array(p.heights), new rapier.Vector3(p.sizeX, 1, p.sizeZ));
+      }
+      default:
+        return null;
+    }
+  }
+
   private createShapeFromDescriptor(desc: ShapeDescriptor): RAPIER.Shape | null {
     switch (desc.type) {
       case 'box': {
@@ -515,8 +626,19 @@ export class PhysicsWorld {
         const p = desc.params as { halfHeight: number; radius: number };
         return new this.rapier.Capsule(p.halfHeight, p.radius);
       }
+      case 'cylinder': {
+        const p = desc.params as { halfHeight: number; radius: number };
+        return new this.rapier.Cylinder(p.halfHeight, p.radius);
+      }
+      case 'convex_hull': {
+        const p = desc.params as { vertices: Float32Array };
+        return new this.rapier.ConvexPolyhedron(toFloat32Array(p.vertices), null);
+      }
       case 'mesh':
         // Rapier cannot use trimeshes as query shapes
+        return null;
+      case 'heightfield':
+        // Rapier cannot use heightfields as query shapes
         return null;
       default:
         return null;
@@ -543,10 +665,10 @@ export class PhysicsWorld {
 
     const direction = new this.rapier.Vector3(dx / maxToi, dy / maxToi, dz / maxToi);
 
-    const ignoreCollider = request.ignoreBodyId ? this.colliderMap.get(request.ignoreBodyId) : undefined;
+    const ignoreRb = request.ignoreBodyId ? this.bodyMap.get(request.ignoreBodyId) : undefined;
     const result = this.world.castShape(
       startPos, rotation, direction, shape, 0, maxToi, true,
-      undefined, undefined, ignoreCollider, undefined, undefined,
+      undefined, undefined, undefined, ignoreRb, undefined,
     );
 
     if (result) {
@@ -581,11 +703,11 @@ export class PhysicsWorld {
     const position = new this.rapier.Vector3(request.position.x, request.position.y, request.position.z);
     const rotation = new this.rapier.Quaternion(request.rotation.x, request.rotation.y, request.rotation.z, request.rotation.w);
     const direction = new this.rapier.Vector3(0, 0, 0);
-    const ignoreCollider = request.ignoreBodyId ? this.colliderMap.get(request.ignoreBodyId) : undefined;
+    const ignoreRb = request.ignoreBodyId ? this.bodyMap.get(request.ignoreBodyId) : undefined;
 
     const result = this.world.castShape(
       position, rotation, direction, shape, request.maxDistance, 0, true,
-      undefined, undefined, ignoreCollider, undefined, undefined,
+      undefined, undefined, undefined, ignoreRb, undefined,
     );
 
     if (result) {
@@ -607,11 +729,11 @@ export class PhysicsWorld {
 
   pointProximity(request: PointProximityRequest): PointProximityResponse {
     const point = new this.rapier.Vector3(request.position.x, request.position.y, request.position.z);
-    const ignoreCollider = request.ignoreBodyId ? this.colliderMap.get(request.ignoreBodyId) : undefined;
+    const ignoreRb = request.ignoreBodyId ? this.bodyMap.get(request.ignoreBodyId) : undefined;
 
     const result = this.world.projectPoint(
       point, true,
-      undefined, undefined, ignoreCollider, undefined, undefined,
+      undefined, undefined, undefined, ignoreRb, undefined,
     );
 
     if (result) {

@@ -27,6 +27,16 @@ export function v3toVec(v: Vector3): Vec3 {
   return { x: v.x, y: v.y, z: v.z };
 }
 
+export interface ShapeRawData {
+  vertices?: Float32Array;
+  indices?: Uint32Array;
+  heights?: Float32Array;
+  nrows?: number;
+  ncols?: number;
+  sizeX?: number;
+  sizeZ?: number;
+}
+
 export interface RapierPluginState {
   rapier: typeof RAPIER;
   world: RAPIER.World;
@@ -38,6 +48,7 @@ export interface RapierPluginState {
   shapeDensityMap: Map<PhysicsShape, number>;
   shapeFilterMembership: Map<PhysicsShape, number>;
   shapeFilterCollide: Map<PhysicsShape, number>;
+  shapeRawData: Map<PhysicsShape, ShapeRawData>;
   bodyCollisionObservables: Map<PhysicsBody, Observable<IPhysicsCollisionEvent>>;
   bodyCollisionEndedObservables: Map<PhysicsBody, Observable<IBasePhysicsCollisionEvent>>;
   constraintToJoint: Map<PhysicsConstraint, RAPIER.ImpulseJoint>;

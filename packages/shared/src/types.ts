@@ -28,7 +28,7 @@ export interface BodyState {
   fieldMask?: number;
 }
 
-export type ShapeType = 'box' | 'sphere' | 'capsule' | 'mesh';
+export type ShapeType = 'box' | 'sphere' | 'capsule' | 'mesh' | 'cylinder' | 'convex_hull' | 'heightfield' | 'container';
 
 export type MotionType = 'dynamic' | 'static' | 'kinematic';
 
@@ -50,9 +50,37 @@ export interface MeshShapeParams {
   indices: Uint32Array;
 }
 
+export interface CylinderShapeParams {
+  halfHeight: number;
+  radius: number;
+}
+
+export interface ConvexHullShapeParams {
+  vertices: Float32Array;
+}
+
+export interface HeightfieldShapeParams {
+  heights: Float32Array;
+  numSamplesX: number;
+  numSamplesZ: number;
+  sizeX: number;
+  sizeZ: number;
+}
+
+export interface ContainerChildShape {
+  shape: ShapeDescriptor;
+  translation?: Vec3;
+  rotation?: Quat;
+}
+
+export interface ContainerShapeParams {
+  children: ContainerChildShape[];
+}
+
 export interface ShapeDescriptor {
   type: ShapeType;
-  params: BoxShapeParams | SphereShapeParams | CapsuleShapeParams | MeshShapeParams;
+  params: BoxShapeParams | SphereShapeParams | CapsuleShapeParams | MeshShapeParams
+    | CylinderShapeParams | ConvexHullShapeParams | HeightfieldShapeParams | ContainerShapeParams;
 }
 
 export interface BodyDescriptor {

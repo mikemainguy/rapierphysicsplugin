@@ -35,7 +35,7 @@ import type {
 } from '@babylonjs/core';
 import type { Mesh, TransformNode, Nullable } from '@babylonjs/core';
 import type { CollisionEventData } from '@rapierphysicsplugin/shared';
-import type { AxisConfig } from './rapier-types.js';
+import type { AxisConfig, ShapeRawData } from './rapier-types.js';
 
 import { processCollisionEvents, injectCollisionEvents } from './rapier-collision-ops.js';
 import * as bodyOps from './rapier-body-ops.js';
@@ -79,6 +79,7 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
   public eventQueue!: RAPIER.EventQueue;
   public colliderHandleToBody = new Map<number, PhysicsBody>();
   public activeCollisionPairs = new Set<string>();
+  public shapeRawData = new Map<PhysicsShape, ShapeRawData>();
 
   constructor(rapier: typeof RAPIER, gravity?: Vector3) {
     this.rapier = rapier;
@@ -354,6 +355,19 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
         if (r !== undefined && hh !== undefined) return new this.rapier.Cylinder(hh, r);
         return null;
       }
+      case PhysicsShapeType.CONVEX_HULL: {
+        const raw = this.shapeRawData.get(shape);
+        if (raw?.vertices) {
+          return new this.rapier.ConvexPolyhedron(raw.vertices, null);
+        }
+        return null;
+      }
+      case PhysicsShapeType.MESH:
+        // Rapier does not support trimeshes as query shapes
+        return null;
+      case PhysicsShapeType.HEIGHTFIELD:
+        // Rapier does not support heightfields as query shapes
+        return null;
       default:
         return null;
     }
@@ -507,6 +521,7 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
     this.activeCollisionPairs.clear();
     this.shapeFilterMembership.clear();
     this.shapeFilterCollide.clear();
+    this.shapeRawData.clear();
   }
 
   // --- Rapier-specific helpers for sync module ---
