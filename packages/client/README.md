@@ -133,7 +133,11 @@ The server validates ownership requests — a client can only own bodies as itse
 - `PhysicsShapeType.BOX`
 - `PhysicsShapeType.SPHERE`
 - `PhysicsShapeType.CAPSULE`
+- `PhysicsShapeType.CYLINDER`
 - `PhysicsShapeType.MESH`
+- `PhysicsShapeType.CONVEX_HULL`
+- `PhysicsShapeType.HEIGHTFIELD`
+- `PhysicsShapeType.CONTAINER`
 
 ## Physics Interactions
 
@@ -254,3 +258,7 @@ const offset = clockSync.getClockOffset();
 
 ### Demo Code On Github
   https://github.com/mikemainguy/rapierphysicsplugin/tree/main/packages/demo
+
+## Release Notes
+
+- [v1.0.10](../../RELEASE_NOTES_1_0_10.md) — Cylinder, convex hull, heightfield, and container shapes; msgpackr typed array serialization fix

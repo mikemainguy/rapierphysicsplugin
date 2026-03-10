@@ -127,3 +127,7 @@ Falls back to `wasm-compat` automatically if SIMD is unavailable.
 - `@dimforge/rapier3d-simd-compat` (optional) — SIMD-accelerated build
 - `ws` — WebSocket server
 - `@rapierphysicsplugin/shared` — types and serialization
+
+## Release Notes
+
+- [v1.0.10](../../RELEASE_NOTES_1_0_10.md) — Cylinder, convex hull, heightfield, and container shapes; msgpackr typed array serialization fix

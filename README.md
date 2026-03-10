@@ -88,3 +88,7 @@ Server (60Hz physics, 20Hz broadcast)
 ```
 
 The server is fully authoritative. Clients have no local physics simulation — they receive state snapshots and interpolate between them for smooth rendering.
+
+## Release Notes
+
+- [v1.0.10](./RELEASE_NOTES_1_0_10.md) — Cylinder, convex hull, heightfield, and container shapes; msgpackr typed array serialization fix

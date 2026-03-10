@@ -17,7 +17,7 @@ Core data structures for physics simulation and networking:
 - **`Vec3`, `Quat`** — vector and quaternion interfaces
 - **`BodyState`** — runtime physics state (position, rotation, velocities)
 - **`BodyDescriptor`** — static body definition (shape, motion type, mass, friction, restitution, optional `ownerId` for automatic cleanup on disconnect)
-- **`ShapeType`** — `'box' | 'sphere' | 'capsule' | 'mesh'`
+- **`ShapeType`** — `'box' | 'sphere' | 'capsule' | 'mesh' | 'cylinder' | 'convex_hull' | 'heightfield' | 'container'`
 - **`MotionType`** — `'dynamic' | 'static' | 'kinematic'`
 - **`InputAction`** — commands to apply forces, impulses, or set velocities on bodies
 - **`CollisionEventData`** — collision event info (bodies, contact point, impulse)
@@ -78,3 +78,7 @@ const jointData = createJointData(RAPIER, descriptor);
 - `@dimforge/rapier3d-compat` — Rapier WASM physics engine
 - `@dimforge/rapier3d-simd-compat` (optional) — SIMD-accelerated build
 - `msgpackr` — binary serialization
+
+## Release Notes
+
+- [v1.0.10](../../RELEASE_NOTES_1_0_10.md) — Cylinder, convex hull, heightfield, and container shapes; msgpackr typed array serialization fix
