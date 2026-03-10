@@ -4,6 +4,7 @@ import type {
   BodyState,
   CollisionEventData,
   ConstraintDescriptor,
+  ConstraintUpdates,
   Vec3,
   Quat,
   InputAction,
@@ -283,6 +284,33 @@ export class PhysicsWorld {
     if (!joint) return;
     this.world.removeImpulseJoint(joint, true);
     this.constraintMap.delete(id);
+  }
+
+  updateConstraint(id: string, updates: ConstraintUpdates): void {
+    const joint = this.constraintMap.get(id);
+    if (!joint) return;
+
+    if (updates.enabled !== undefined) {
+      (joint as any).setEnabled?.(updates.enabled);
+    }
+    if (updates.collisionsEnabled !== undefined) {
+      joint.setContactsEnabled(updates.collisionsEnabled);
+    }
+    if (updates.axisUpdates) {
+      for (const au of updates.axisUpdates) {
+        if (au.minLimit !== undefined && au.maxLimit !== undefined) {
+          (joint as any).setLimits?.(au.minLimit, au.maxLimit);
+        }
+        if (au.motorTarget !== undefined) {
+          const maxForce = au.motorMaxForce ?? 1000;
+          if (au.motorType === 1) { // velocity
+            (joint as any).configureMotorVelocity?.(au.motorTarget, maxForce);
+          } else {
+            (joint as any).configureMotorPosition?.(au.motorTarget, maxForce, 0);
+          }
+        }
+      }
+    }
   }
 
   hasConstraint(id: string): boolean {

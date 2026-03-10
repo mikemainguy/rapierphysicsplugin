@@ -4,6 +4,7 @@ import type {
   ClientInput,
   CollisionEventData,
   ConstraintDescriptor,
+  ConstraintUpdates,
   RoomSnapshot,
   Vec3,
   ShapeCastRequest,
@@ -32,6 +33,7 @@ export enum MessageType {
   COLLISION_EVENTS = 'collision_events',
   ADD_CONSTRAINT = 'add_constraint',
   REMOVE_CONSTRAINT = 'remove_constraint',
+  UPDATE_CONSTRAINT = 'update_constraint',
   MESH_BINARY = 'mesh_binary',
   SHAPE_CAST_REQUEST = 'shape_cast_request',
   SHAPE_CAST_RESPONSE = 'shape_cast_response',
@@ -100,6 +102,12 @@ export interface AddConstraintMessage {
 export interface RemoveConstraintMessage {
   type: MessageType.REMOVE_CONSTRAINT;
   constraintId: string;
+}
+
+export interface UpdateConstraintMessage {
+  type: MessageType.UPDATE_CONSTRAINT;
+  constraintId: string;
+  updates: ConstraintUpdates;
 }
 
 export interface MeshBinaryMessage {
@@ -211,6 +219,7 @@ export type ClientMessage =
   | BodyEventMessage
   | AddConstraintMessage
   | RemoveConstraintMessage
+  | UpdateConstraintMessage
   | MeshBinaryMessage
   | ShapeCastRequestMessage
   | ShapeProximityRequestMessage
@@ -229,6 +238,7 @@ export type ServerMessage =
   | BodyEventMessage
   | AddConstraintMessage
   | RemoveConstraintMessage
+  | UpdateConstraintMessage
   | MeshBinaryMessage
   | ShapeCastResponseMessage
   | ShapeProximityResponseMessage

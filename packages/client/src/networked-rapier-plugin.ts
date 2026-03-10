@@ -18,6 +18,9 @@ import type {
   PhysicsMaterial,
   PhysicsMassProperties,
   PhysicsConstraint,
+  PhysicsConstraintAxisLimitMode,
+  PhysicsConstraintMotorType,
+  PhysicsConstraintAxis,
 } from '@babylonjs/core';
 import type { Scene, Nullable, BaseTexture } from '@babylonjs/core';
 import type {
@@ -28,6 +31,8 @@ import type {
   CapsuleShapeParams,
   InputAction,
   CollisionEventData,
+  ConstraintDescriptor,
+  ConstraintUpdates,
   RoomSnapshot,
   MotionType,
   MeshBinaryMessage,
@@ -39,6 +44,7 @@ import type {
   PointProximityResponse,
 } from '@rapierphysicsplugin/shared';
 import {
+  createJointData,
   encodeMeshBinary,
   computeGeometryHash,
   encodeGeometryDef,
@@ -182,6 +188,11 @@ export class NetworkedRapierPlugin extends RapierPlugin {
   private sentTextureHashes: Set<string> = new Set();
   private textureObjectUrls: Map<string, string> = new Map();
 
+  // Constraint network tracking
+  private constraintToNetId = new Map<PhysicsConstraint, string>();
+  private localConstraintIds = new Set<string>();
+  private remoteConstraintJoints = new Map<string, RAPIER.ImpulseJoint>();
+
   // Explicit mass set via setMassProperties (avoids Rapier collider-recompute clobbering)
   private bodyMassOverride = new Map<PhysicsBody, number>();
 
@@ -241,6 +252,9 @@ export class NetworkedRapierPlugin extends RapierPlugin {
       this.collisionCount += events.length;
       this.injectCollisionEvents(events);
     });
+    this.syncClient.onConstraintAdded((descriptor) => this.handleConstraintAdded(descriptor));
+    this.syncClient.onConstraintRemoved((constraintId) => this.handleConstraintRemoved(constraintId));
+    this.syncClient.onConstraintUpdated((constraintId, updates) => this.handleConstraintUpdated(constraintId, updates));
     this.syncClient.onStateUpdate((state) => {
       for (const cb of this.stateUpdateCallbacks) cb(state);
     });
@@ -486,6 +500,14 @@ export class NetworkedRapierPlugin extends RapierPlugin {
     }
     this.textureObjectUrls.clear();
     this.collisionCount = 0;
+
+    // Clean up remote constraint joints
+    for (const [, joint] of this.remoteConstraintJoints) {
+      this.world.removeImpulseJoint(joint, true);
+    }
+    this.remoteConstraintJoints.clear();
+    this.constraintToNetId.clear();
+    this.localConstraintIds.clear();
 
     // Dispose all existing physics bodies and their meshes
     for (const [body] of entries) {
@@ -964,14 +986,190 @@ export class NetworkedRapierPlugin extends RapierPlugin {
       descriptor.id = `${bodyIdA}_${bodyIdB}_${crypto.randomUUID().slice(0, 8)}`;
       descriptor.bodyIdA = bodyIdA;
       descriptor.bodyIdB = bodyIdB;
+
+      // Track constraint ID for network lifecycle
+      this.constraintToNetId.set(constraint, descriptor.id);
+      this.localConstraintIds.add(descriptor.id);
+
       // Defer to ensure body descriptors (sent eagerly from setMaterial
       // or via microtask fallback) are dispatched first
       queueMicrotask(() => {
         queueMicrotask(() => {
-          console.log('[constraint] sending', descriptor.type, descriptor.id, descriptor.bodyIdA, descriptor.bodyIdB);
           this.syncClient.addConstraint(descriptor);
         });
       });
+    }
+  }
+
+  // --- Constraint lifecycle overrides ---
+
+  disposeConstraint(constraint: PhysicsConstraint): void {
+    const netId = this.constraintToNetId.get(constraint);
+    if (netId) {
+      this.syncClient.removeConstraint(netId);
+      this.constraintToNetId.delete(constraint);
+      this.localConstraintIds.delete(netId);
+    }
+    super.disposeConstraint(constraint);
+  }
+
+  setEnabled(constraint: PhysicsConstraint, isEnabled: boolean): void {
+    super.setEnabled(constraint, isEnabled);
+    const netId = this.constraintToNetId.get(constraint);
+    if (netId) {
+      this.syncClient.updateConstraint(netId, { enabled: isEnabled });
+    }
+  }
+
+  setCollisionsEnabled(constraint: PhysicsConstraint, isEnabled: boolean): void {
+    super.setCollisionsEnabled(constraint, isEnabled);
+    const netId = this.constraintToNetId.get(constraint);
+    if (netId) {
+      this.syncClient.updateConstraint(netId, { collisionsEnabled: isEnabled });
+    }
+  }
+
+  setAxisMode(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, limitMode: PhysicsConstraintAxisLimitMode): void {
+    super.setAxisMode(constraint, axis, limitMode);
+    const netId = this.constraintToNetId.get(constraint);
+    if (netId) {
+      this.syncClient.updateConstraint(netId, { axisUpdates: [{ axis: axis as number, mode: limitMode as number }] });
+    }
+  }
+
+  setAxisMinLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, minLimit: number): void {
+    super.setAxisMinLimit(constraint, axis, minLimit);
+    const netId = this.constraintToNetId.get(constraint);
+    if (netId) {
+      this.syncClient.updateConstraint(netId, { axisUpdates: [{ axis: axis as number, minLimit }] });
+    }
+  }
+
+  setAxisMaxLimit(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, limit: number): void {
+    super.setAxisMaxLimit(constraint, axis, limit);
+    const netId = this.constraintToNetId.get(constraint);
+    if (netId) {
+      this.syncClient.updateConstraint(netId, { axisUpdates: [{ axis: axis as number, maxLimit: limit }] });
+    }
+  }
+
+  setAxisMotorType(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, motorType: PhysicsConstraintMotorType): void {
+    super.setAxisMotorType(constraint, axis, motorType);
+    const netId = this.constraintToNetId.get(constraint);
+    if (netId) {
+      this.syncClient.updateConstraint(netId, { axisUpdates: [{ axis: axis as number, motorType: motorType as number }] });
+    }
+  }
+
+  setAxisMotorTarget(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, target: number): void {
+    super.setAxisMotorTarget(constraint, axis, target);
+    const netId = this.constraintToNetId.get(constraint);
+    if (netId) {
+      this.syncClient.updateConstraint(netId, { axisUpdates: [{ axis: axis as number, motorTarget: target }] });
+    }
+  }
+
+  setAxisMotorMaxForce(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, maxForce: number): void {
+    super.setAxisMotorMaxForce(constraint, axis, maxForce);
+    const netId = this.constraintToNetId.get(constraint);
+    if (netId) {
+      this.syncClient.updateConstraint(netId, { axisUpdates: [{ axis: axis as number, motorMaxForce: maxForce }] });
+    }
+  }
+
+  setAxisFriction(constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, friction: number): void {
+    super.setAxisFriction(constraint, axis, friction);
+    const netId = this.constraintToNetId.get(constraint);
+    if (netId) {
+      this.syncClient.updateConstraint(netId, { axisUpdates: [{ axis: axis as number, friction }] });
+    }
+  }
+
+  // --- Constraint incoming handlers ---
+
+  private handleConstraintAdded(descriptor: ConstraintDescriptor): void {
+    // Skip if this is our own constraint echoed back
+    if (this.localConstraintIds.has(descriptor.id)) return;
+
+    // Look up the local PhysicsBody objects
+    const bodyA = this.idToBody.get(descriptor.bodyIdA);
+    const bodyB = this.idToBody.get(descriptor.bodyIdB);
+    if (!bodyA || !bodyB) return;
+
+    const rbA = this.bodyToRigidBody.get(bodyA);
+    const rbB = this.bodyToRigidBody.get(bodyB);
+    if (!rbA || !rbB) return;
+
+    // Create Rapier joint directly from descriptor (no BabylonJS PhysicsConstraint needed)
+    const jointData = createJointData(this.rapier, descriptor);
+    const joint = this.world.createImpulseJoint(jointData, rbA, rbB, true);
+    if (descriptor.collision === false) {
+      joint.setContactsEnabled(false);
+    }
+    this.remoteConstraintJoints.set(descriptor.id, joint);
+  }
+
+  private handleConstraintRemoved(constraintId: string): void {
+    // Remote constraint?
+    const remoteJoint = this.remoteConstraintJoints.get(constraintId);
+    if (remoteJoint) {
+      this.world.removeImpulseJoint(remoteJoint, true);
+      this.remoteConstraintJoints.delete(constraintId);
+      return;
+    }
+
+    // Local constraint removed by server/another client — find and dispose
+    for (const [constraint, netId] of this.constraintToNetId) {
+      if (netId === constraintId) {
+        super.disposeConstraint(constraint);
+        this.constraintToNetId.delete(constraint);
+        this.localConstraintIds.delete(constraintId);
+        return;
+      }
+    }
+  }
+
+  private handleConstraintUpdated(constraintId: string, updates: ConstraintUpdates): void {
+    // Try remote constraint first
+    const remoteJoint = this.remoteConstraintJoints.get(constraintId);
+    if (remoteJoint) {
+      this.applyUpdatesToJoint(remoteJoint, updates);
+      return;
+    }
+
+    // Try local constraint
+    for (const [constraint, netId] of this.constraintToNetId) {
+      if (netId === constraintId) {
+        const joint = this.constraintToJoint.get(constraint);
+        if (joint) {
+          this.applyUpdatesToJoint(joint, updates);
+        }
+        return;
+      }
+    }
+  }
+
+  private applyUpdatesToJoint(joint: RAPIER.ImpulseJoint, updates: ConstraintUpdates): void {
+    if (updates.enabled !== undefined) {
+      (joint as any).setEnabled?.(updates.enabled);
+    }
+    if (updates.collisionsEnabled !== undefined) {
+      joint.setContactsEnabled(updates.collisionsEnabled);
+    }
+    if (updates.axisUpdates) {
+      for (const au of updates.axisUpdates) {
+        if (au.minLimit !== undefined && au.maxLimit !== undefined) {
+          (joint as any).setLimits?.(au.minLimit, au.maxLimit);
+        }
+        if (au.motorTarget !== undefined) {
+          const maxForce = au.motorMaxForce ?? 1000;
+          if (au.motorType === 1) { // velocity
+            (joint as any).configureMotorVelocity?.(au.motorTarget, maxForce);
+          } else {
+            (joint as any).configureMotorPosition?.(au.motorTarget, maxForce, 0);
+          }
+        }
+      }
     }
   }
 

@@ -279,6 +279,15 @@ export class PhysicsServer {
         break;
       }
 
+      case MessageType.UPDATE_CONSTRAINT: {
+        if (!conn.roomId) return;
+        const room = this.roomManager.getRoom(conn.roomId);
+        if (room) {
+          room.updateConstraint(message.constraintId, message.updates);
+        }
+        break;
+      }
+
       case MessageType.SHAPE_CAST_REQUEST: {
         if (!conn.roomId) return;
         const room = this.roomManager.getRoom(conn.roomId);

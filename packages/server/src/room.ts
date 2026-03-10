@@ -3,6 +3,7 @@ import type {
   BodyDescriptor,
   CollisionEventData,
   ConstraintDescriptor,
+  ConstraintUpdates,
   RoomSnapshot,
   Vec3,
   ShapeCastRequest,
@@ -239,6 +240,17 @@ export class Room {
     this.broadcast(encodeMessage({
       type: MessageType.REMOVE_CONSTRAINT,
       constraintId,
+    }));
+  }
+
+  updateConstraint(constraintId: string, updates: ConstraintUpdates): void {
+    this.physicsWorld.updateConstraint(constraintId, updates);
+
+    // Broadcast to all clients
+    this.broadcast(encodeMessage({
+      type: MessageType.UPDATE_CONSTRAINT,
+      constraintId,
+      updates,
     }));
   }
 

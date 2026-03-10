@@ -136,6 +136,23 @@ export interface ClientInput {
   actions: InputAction[];
 }
 
+// --- Constraint update types ---
+
+export interface ConstraintUpdates {
+  enabled?: boolean;
+  collisionsEnabled?: boolean;
+  axisUpdates?: Array<{
+    axis: number;
+    mode?: number;
+    minLimit?: number;
+    maxLimit?: number;
+    friction?: number;
+    motorType?: number;
+    motorTarget?: number;
+    motorMaxForce?: number;
+  }>;
+}
+
 // --- Constraint types ---
 
 export type ConstraintType =

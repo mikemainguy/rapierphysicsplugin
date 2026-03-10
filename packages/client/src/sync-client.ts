@@ -3,6 +3,7 @@ import type {
   BodyState,
   CollisionEventData,
   ConstraintDescriptor,
+  ConstraintUpdates,
   RoomSnapshot,
   InputAction,
   ClientMessage,
@@ -47,6 +48,7 @@ type SimulationStartedCallback = (snapshot: RoomSnapshot) => void;
 type CollisionEventsCallback = (events: CollisionEventData[]) => void;
 type ConstraintAddedCallback = (constraint: ConstraintDescriptor) => void;
 type ConstraintRemovedCallback = (constraintId: string) => void;
+type ConstraintUpdatedCallback = (constraintId: string, updates: ConstraintUpdates) => void;
 type MeshBinaryCallback = (msg: MeshBinaryMessage) => void;
 type GeometryDefCallback = (data: GeometryDefData) => void;
 type MeshRefCallback = (data: MeshRefData) => void;
@@ -78,6 +80,7 @@ export class PhysicsSyncClient {
   private collisionEventsCallbacks: CollisionEventsCallback[] = [];
   private constraintAddedCallbacks: ConstraintAddedCallback[] = [];
   private constraintRemovedCallbacks: ConstraintRemovedCallback[] = [];
+  private constraintUpdatedCallbacks: ConstraintUpdatedCallback[] = [];
   private meshBinaryCallbacks: MeshBinaryCallback[] = [];
   private geometryDefCallbacks: GeometryDefCallback[] = [];
   private meshRefCallbacks: MeshRefCallback[] = [];
@@ -306,6 +309,11 @@ export class PhysicsSyncClient {
     this.send({ type: MessageType.REMOVE_CONSTRAINT, constraintId });
   }
 
+  updateConstraint(constraintId: string, updates: ConstraintUpdates): void {
+    if (!this.ws) return;
+    this.send({ type: MessageType.UPDATE_CONSTRAINT, constraintId, updates });
+  }
+
   onStateUpdate(callback: StateUpdateCallback): void {
     this.stateUpdateCallbacks.push(callback);
   }
@@ -332,6 +340,10 @@ export class PhysicsSyncClient {
 
   onConstraintRemoved(callback: ConstraintRemovedCallback): void {
     this.constraintRemovedCallbacks.push(callback);
+  }
+
+  onConstraintUpdated(callback: ConstraintUpdatedCallback): void {
+    this.constraintUpdatedCallbacks.push(callback);
   }
 
   onMeshBinary(callback: MeshBinaryCallback): void {
@@ -705,6 +717,12 @@ export class PhysicsSyncClient {
       case MessageType.REMOVE_CONSTRAINT:
         for (const cb of this.constraintRemovedCallbacks) {
           cb(message.constraintId);
+        }
+        break;
+
+      case MessageType.UPDATE_CONSTRAINT:
+        for (const cb of this.constraintUpdatedCallbacks) {
+          cb(message.constraintId, message.updates);
         }
         break;
 
