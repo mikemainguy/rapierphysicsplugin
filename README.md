@@ -35,8 +35,6 @@ npm run dev --workspace=packages/demo
 # 5. Open http://localhost:5173 in your browser
 ```
 
-> **Note:** The demo client connects to `wss://rapier-server.flatearthdefense.com` by default. To use a local server, change the WebSocket URL in `packages/demo/src/main.ts` to `ws://localhost:8080`.
-
 ## Build
 
 ```bash

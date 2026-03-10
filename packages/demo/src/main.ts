@@ -16,6 +16,7 @@ import {
 import type { IPhysicsCollisionEvent } from '@babylonjs/core';
 import { NetworkedRapierPlugin } from '@rapierphysicsplugin/client';
 import { loadRapier, detectSIMDSupport, ComputeBackend } from '@rapierphysicsplugin/shared';
+import type { ShapeDescriptor } from '@rapierphysicsplugin/shared';
 
 const gravity = new Vector3(0, -9.81, 0);
 const FLASH_COLOR = new Color3(1, 1, 0.2);
@@ -53,6 +54,7 @@ async function main() {
 
   // 2. BabylonJS engine & scene
   const canvas = document.getElementById('renderCanvas') as HTMLCanvasElement;
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   const engine = new Engine(canvas, true);
   const scene = new Scene(engine);
 
@@ -75,7 +77,7 @@ async function main() {
     debugEl.textContent = 'Connecting...';
     ({ plugin, snapshot } = await NetworkedRapierPlugin.createAsync(
       RAPIER, gravity,
-      { serverUrl: 'wss://rapier-server.flatearthdefense.com', roomId: 'demo', renderDelayMs: 300, clockSyncIntervalMs: 2000 },
+      { serverUrl: 'ws://localhost:8080', roomId: 'demo', renderDelayMs: 300, clockSyncIntervalMs: 2000 },
       scene,
     ));
     debugEl.textContent = 'Connected.';
@@ -217,14 +219,22 @@ async function main() {
     }
   });
 
-  // 7. Click to apply impulse (uses standard Babylon.js physics API)
-  scene.onPointerDown = (_evt, pickResult) => {
-    if (pickResult?.hit && pickResult.pickedMesh) {
-      const mesh = pickResult.pickedMesh as Mesh;
-      if (mesh.physicsBody) {
-        const point = pickResult.pickedPoint ?? mesh.position;
-        mesh.physicsBody.applyImpulse(new Vector3(0, 4, 0), point);
-      }
+  // 7. Click to apply impulse (left-click) or remove body (right-click)
+  const PROTECTED_NAMES = new Set(['ground', 'static', 'constrained']);
+
+  scene.onPointerDown = (evt, pickResult) => {
+    if (!pickResult?.hit || !pickResult.pickedMesh) return;
+    const mesh = pickResult.pickedMesh as Mesh;
+    if (!mesh.physicsBody) return;
+
+    if (evt.button === 0) {
+      // Left-click: apply impulse
+      const point = pickResult.pickedPoint ?? mesh.position;
+      mesh.physicsBody.applyImpulse(new Vector3(0, 4, 0), point);
+    } else if (evt.button === 2) {
+      // Right-click: remove body (skip protected)
+      if (PROTECTED_NAMES.has(mesh.name)) return;
+      mesh.physicsBody.dispose();
     }
   };
 
@@ -236,7 +246,54 @@ async function main() {
     else if (event.type === PhysicsEventType.COLLISION_CONTINUED) collisionContinuedCount++;
   });
 
-  // 9. State update tracking for debug overlay
+  // 9. Shape Cast button — exercises networked-query-ops.shapeCastAsync
+  const queryButton = document.getElementById('queryButton') as HTMLButtonElement;
+  let lastQueryResult = 'none';
+
+  queryButton.addEventListener('click', async () => {
+    queryButton.disabled = true;
+    try {
+      const shape: ShapeDescriptor = { type: 'sphere', params: { radius: 0.5 } };
+      const result = await plugin.shapeCastAsync(
+        shape,
+        { x: 0, y: 15, z: 0 },
+        { x: 0, y: -5, z: 0 },
+        { x: 0, y: 0, z: 0, w: 1 },
+      );
+      if (result.hit && result.hitBodyId) {
+        lastQueryResult = `hit ${result.hitBodyId} f=${result.fraction?.toFixed(3)}`;
+        // Highlight hit body magenta for 500ms
+        if (result.hitBody) {
+          const hitMesh = result.hitBody.transformNode as Mesh;
+          const mat = hitMesh?.material as StandardMaterial | null;
+          if (mat) {
+            const orig = mat.diffuseColor.clone();
+            mat.diffuseColor = new Color3(1, 0, 1);
+            setTimeout(() => { try { mat.diffuseColor = orig; } catch { /* disposed */ } }, 500);
+          }
+        }
+      } else {
+        lastQueryResult = 'no hit';
+      }
+    } catch (e) {
+      lastQueryResult = `error: ${e}`;
+    } finally {
+      queryButton.disabled = false;
+    }
+  });
+
+  // 10. Spin All button — exercises networked-query-ops.applyTorque
+  const spinButton = document.getElementById('spinButton') as HTMLButtonElement;
+
+  spinButton.addEventListener('click', () => {
+    const torque = new Vector3(0, 10, 0);
+    for (const [body, id] of plugin.bodyToId) {
+      if (PROTECTED_NAMES.has(id)) continue;
+      plugin.applyTorque(body, torque);
+    }
+  });
+
+  // State update tracking for debug overlay
   let lastTick = 0;
   let lastDeltaCount = 0;
   plugin.onStateUpdate((state) => {
@@ -244,7 +301,7 @@ async function main() {
     lastDeltaCount = state.bodies.length;
   });
 
-  // 10. Render loop — just scene.render() + debug overlay
+  // Render loop — just scene.render() + debug overlay
   const reconciler = plugin.getReconciler();
   const interpolator = reconciler.getInterpolator();
   const clockSync = plugin.getClockSync();
@@ -278,6 +335,7 @@ async function main() {
       `WS sent: ${formatBytes(plugin.bytesSent)}\n` +
       `WS recv: ${formatBytes(plugin.bytesReceived)}\n` +
       `Collisions: ${collisionStartedCount} started, ${collisionContinuedCount} continued\n` +
+      `Query: ${lastQueryResult}\n` +
       `Client: ${plugin.getClientId() ?? '?'}`;
   });
 
