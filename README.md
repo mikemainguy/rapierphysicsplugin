@@ -89,7 +89,12 @@ Server (60Hz physics, 20Hz broadcast)
 
 The server is fully authoritative. Clients have no local physics simulation — they receive state snapshots and interpolate between them for smooth rendering.
 
+## Usage Guide
+
+See the [Usage Guide](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/USAGE.md) for detailed documentation on all features, including bodies, shapes, constraints, motors, friction, collision events, queries, networking, differences from Havok, and known limitations.
+
 ## Release Notes
 
-- [v1.0.11](./RELEASE_NOTES_1_0_11.md) — Fix heightfield nrows/ncols axis swap and column-major storage order
-- [v1.0.10](./RELEASE_NOTES_1_0_10.md) — Cylinder, convex hull, heightfield, and container shapes; msgpackr typed array serialization fix
+- [v1.0.12](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_12.md) — Joint axis friction, motor system overhaul, constraint update buffering, hinge motor demo
+- [v1.0.11](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_11.md) — Fix heightfield nrows/ncols axis swap and column-major storage order
+- [v1.0.10](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_10.md) — Cylinder, convex hull, heightfield, and container shapes; msgpackr typed array serialization fix
