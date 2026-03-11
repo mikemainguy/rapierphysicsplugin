@@ -11,6 +11,9 @@ import { createJointData } from '@rapierphysicsplugin/shared';
 import { buildConstraintDescriptor } from '../rapier/constraint-ops.js';
 import type { NetworkedPluginState } from './types.js';
 
+/** Buffer updates for constraints whose creation hasn't been sent yet. */
+const pendingUpdates = new Map<string, ConstraintUpdates[]>();
+
 export function onAddConstraint(
   state: NetworkedPluginState,
   body: PhysicsBody,
@@ -27,10 +30,18 @@ export function onAddConstraint(
 
     state.constraintToNetId.set(constraint, descriptor.id);
     state.localConstraintIds.add(descriptor.id);
+    pendingUpdates.set(descriptor.id, []);
 
     queueMicrotask(() => {
       queueMicrotask(() => {
         state.syncClient.addConstraint(descriptor);
+        const queued = pendingUpdates.get(descriptor.id);
+        pendingUpdates.delete(descriptor.id);
+        if (queued) {
+          for (const update of queued) {
+            state.syncClient.updateConstraint(descriptor.id, update);
+          }
+        }
       });
     });
   }
@@ -55,7 +66,12 @@ export function sendConstraintUpdate(
 ): void {
   const netId = state.constraintToNetId.get(constraint);
   if (netId) {
-    state.syncClient.updateConstraint(netId, updates);
+    const queue = pendingUpdates.get(netId);
+    if (queue) {
+      queue.push(updates);
+    } else {
+      state.syncClient.updateConstraint(netId, updates);
+    }
   }
 }
 
@@ -126,6 +142,25 @@ export function handleConstraintUpdated(
   }
 }
 
+/** Tracks per-joint motor config so independent updates can be applied without re-sending motorType. */
+interface MotorConfig { type: number; target: number; stiffness: number; damping: number; friction: number }
+const clientMotorConfigs = new WeakMap<object, MotorConfig>();
+
+function applyMotor(joint: object, config: MotorConfig): void {
+  if (config.type === 1) { // velocity
+    (joint as any).configureMotorVelocity?.(config.target, config.damping);
+  } else if (config.type === 2) { // position
+    (joint as any).configureMotorPosition?.(config.target, config.stiffness, config.damping);
+  } else if (config.friction > 0) {
+    // NONE with friction — velocity motor targeting 0, friction as damping
+    (joint as any).configureMotorVelocity?.(0, config.friction);
+  } else {
+    // NONE, no friction — fully neutralize
+    (joint as any).configureMotor?.(0, 0, 0, 0);
+    (joint as any).setMotorMaxForce?.(0);
+  }
+}
+
 export function applyUpdatesToJoint(joint: RAPIER.ImpulseJoint, updates: ConstraintUpdates): void {
   if (updates.enabled !== undefined) {
     (joint as any).setEnabled?.(updates.enabled);
@@ -138,13 +173,32 @@ export function applyUpdatesToJoint(joint: RAPIER.ImpulseJoint, updates: Constra
       if (au.minLimit !== undefined && au.maxLimit !== undefined) {
         (joint as any).setLimits?.(au.minLimit, au.maxLimit);
       }
-      if (au.motorTarget !== undefined) {
-        const maxForce = au.motorMaxForce ?? 1000;
-        if (au.motorType === 1) {
-          (joint as any).configureMotorVelocity?.(au.motorTarget, maxForce);
-        } else {
-          (joint as any).configureMotorPosition?.(au.motorTarget, maxForce, 0);
+      if (au.motorType !== undefined) {
+        const config: MotorConfig = {
+          type: au.motorType,
+          target: au.motorTarget ?? 0,
+          stiffness: au.stiffness ?? 1000,
+          damping: au.damping ?? 100,
+          friction: au.friction ?? clientMotorConfigs.get(joint)?.friction ?? 0,
+        };
+        clientMotorConfigs.set(joint, config);
+        applyMotor(joint, config);
+      } else if (au.motorTarget !== undefined) {
+        const config = clientMotorConfigs.get(joint);
+        if (config) {
+          config.target = au.motorTarget;
+          applyMotor(joint, config);
         }
+      }
+      if (au.friction !== undefined) {
+        const config = clientMotorConfigs.get(joint);
+        if (config) {
+          config.friction = au.friction;
+          applyMotor(joint, config);
+        }
+      }
+      if (au.motorMaxForce !== undefined) {
+        (joint as any).setMotorMaxForce?.(au.motorMaxForce);
       }
     }
   }

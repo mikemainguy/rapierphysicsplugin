@@ -10,8 +10,11 @@ import {
   PhysicsAggregate,
   PhysicsShapeType,
   PhysicsEventType,
+  PhysicsConstraintAxis,
+  PhysicsConstraintMotorType,
   Mesh,
   BallAndSocketConstraint,
+  HingeConstraint,
   VertexBuffer,
 } from '@babylonjs/core';
 import type { IPhysicsCollisionEvent } from '@babylonjs/core';
@@ -187,10 +190,71 @@ async function main() {
       swingMesh.dispose();
     };
   }
+
+  // --- Hinge Motor Demo ---
+  let hingeCleanup: (() => void) | null = null;
+  let hingeMotorRunning = false;
+
+  function createHingeMotorDemo() {
+    if (hingeCleanup) {
+      hingeCleanup();
+      hingeCleanup = null;
+    }
+
+    // Static post (green) at (-5, 3, 0)
+    const postMesh = MeshBuilder.CreateBox('hingePost', { width: 0.5, height: 4, depth: 0.5 }, scene);
+    const postMat = new StandardMaterial('hingePostMat', scene);
+    postMat.diffuseColor = new Color3(0.3, 0.8, 0.3);
+    postMesh.material = postMat;
+    postMesh.position.set(-5, 3, 0);
+    const postAgg = new PhysicsAggregate(postMesh, PhysicsShapeType.BOX, { mass: 0, friction: 0.8, restitution: 0.3 }, scene);
+
+    // Dynamic arm (orange) attached via vertical hinge, offset so it doesn't collide with the post
+    const armMesh = MeshBuilder.CreateBox('hingeArm', { width: 3, height: 0.4, depth: 0.4 }, scene);
+    const armMat = new StandardMaterial('hingeArmMat', scene);
+    armMat.diffuseColor = new Color3(1, 0.6, 0.1);
+    armMesh.material = armMat;
+    armMesh.position.set(-3.25, 6, 0);
+    const armAgg = new PhysicsAggregate(armMesh, PhysicsShapeType.BOX, { mass: 2, friction: 0.5, restitution: 0.3 }, scene);
+
+    // Hinge constraint — vertical axis (Y), pivot above the post top / left end of arm
+    const hingeConstraint = new HingeConstraint(
+      new Vector3(0, 3, 0),     // pivot on post (1 unit above the top)
+      new Vector3(-1.5, 0, 0),  // pivot on arm (left end)
+      new Vector3(0, 1, 0),     // hinge axis on post (Y = vertical)
+      new Vector3(0, 1, 0),     // hinge axis on arm (Y = vertical)
+      scene,
+    );
+    postAgg.body.addConstraint(armAgg.body, hingeConstraint);
+
+    // Configure motor — velocity motor spinning at 3 rad/s
+    plugin.setAxisMotorType(hingeConstraint, PhysicsConstraintAxis.ANGULAR_X, PhysicsConstraintMotorType.VELOCITY);
+    plugin.setAxisMotorTarget(hingeConstraint, PhysicsConstraintAxis.ANGULAR_X, 3);
+    plugin.setAxisFriction(hingeConstraint, PhysicsConstraintAxis.ANGULAR_X, 10);
+    plugin.setAxisMotorMaxForce(hingeConstraint, PhysicsConstraintAxis.ANGULAR_X, 500);
+    hingeMotorRunning = true;
+
+    hingeCleanup = () => {
+      hingeConstraint.dispose();
+      postAgg.dispose();
+      postMesh.dispose();
+      armAgg.dispose();
+      armMesh.dispose();
+      hingeMotorRunning = false;
+    };
+
+    return hingeConstraint;
+  }
+
   // Only create scene bodies if they don't already exist on the server
   const knownIds = new Set(snapshot.bodies.map(b => b.id));
   if (!knownIds.has('ground')) createGround();
   if (!knownIds.has('static')) createConstraints();
+
+  let activeHingeConstraint: import('@babylonjs/core').HingeConstraint | null = null;
+  if (!knownIds.has('hingePost')) {
+    activeHingeConstraint = createHingeMotorDemo();
+  }
 
   // 5. Start/Reset button
   const simButton = document.getElementById('simButton') as HTMLButtonElement;
@@ -203,6 +267,7 @@ async function main() {
   plugin.onSimulationReset(() => {
     createGround();
     createConstraints();
+    activeHingeConstraint = createHingeMotorDemo();
     simButton.textContent = 'Reset';
   });
 
@@ -300,7 +365,7 @@ async function main() {
   });
 
   // 7. Click to apply impulse (left-click) or remove body (right-click)
-  const PROTECTED_NAMES = new Set(['ground', 'static', 'constrained']);
+  const PROTECTED_NAMES = new Set(['ground', 'static', 'constrained', 'hingePost', 'hingeArm']);
 
   scene.onPointerDown = (evt, pickResult) => {
     if (!pickResult?.hit || !pickResult.pickedMesh) return;
@@ -370,6 +435,28 @@ async function main() {
     for (const [body, id] of plugin.bodyToId) {
       if (PROTECTED_NAMES.has(id)) continue;
       plugin.applyTorque(body, torque);
+    }
+  });
+
+  // 11. Motor toggle button — start/stop the hinge motor
+  const motorButton = document.getElementById('motorButton') as HTMLButtonElement;
+
+  motorButton.addEventListener('click', () => {
+    if (!activeHingeConstraint) return;
+    if (hingeMotorRunning) {
+      // Disable motor entirely
+      plugin.setAxisMotorType(activeHingeConstraint, PhysicsConstraintAxis.ANGULAR_X, PhysicsConstraintMotorType.NONE);
+
+      hingeMotorRunning = false;
+      motorButton.textContent = 'Motor: OFF';
+    } else {
+      // Re-enable velocity motor
+      plugin.setAxisMotorType(activeHingeConstraint, PhysicsConstraintAxis.ANGULAR_X, PhysicsConstraintMotorType.VELOCITY);
+      plugin.setAxisMotorTarget(activeHingeConstraint, PhysicsConstraintAxis.ANGULAR_X, 3);
+
+      plugin.setAxisMotorMaxForce(activeHingeConstraint, PhysicsConstraintAxis.ANGULAR_X, 500);
+      hingeMotorRunning = true;
+      motorButton.textContent = 'Motor: ON';
     }
   });
 

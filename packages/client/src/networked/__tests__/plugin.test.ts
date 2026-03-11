@@ -152,7 +152,7 @@ describe('NetworkedRapierPlugin', () => {
       getClientId: vi.fn(() => 'client-1'),
       getClockSync: vi.fn(() => ({})),
       getReconciler: vi.fn(() => ({})),
-      shapeCastQuery: vi.fn().mockResolvedValue({ hit: true, hitBodyId: 'body1', distance: 1.5 }),
+      shapeCastQuery: vi.fn().mockResolvedValue({ hit: true, hitBodyId: 'body1', fraction: 1.5 }),
       shapeProximityQuery: vi.fn().mockResolvedValue({ hit: true, hitBodyId: 'body2', distance: 0.5 }),
       pointProximityQuery: vi.fn().mockResolvedValue({ hit: false, hitBodyId: null, distance: 10 }),
       get simulationRunning() { return true; },
@@ -678,7 +678,7 @@ describe('NetworkedRapierPlugin', () => {
 
       expect(result.hit).toBe(true);
       expect(result.hitBody).toBe(hitBody);
-      expect(result.distance).toBe(1.5);
+      expect(result.fraction).toBe(1.5);
     });
 
     it('shapeProximityAsync resolves with hit body', async () => {

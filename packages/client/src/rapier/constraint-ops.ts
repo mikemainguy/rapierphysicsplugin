@@ -207,6 +207,7 @@ function getAxisConfig(state: RapierPluginState, constraint: PhysicsConstraint, 
 
 export function setAxisFriction(state: RapierPluginState, constraint: PhysicsConstraint, axis: PhysicsConstraintAxis, friction: number): void {
   ensureAxisConfig(state, constraint, axis).friction = friction;
+  applyMotorToJoint(state, constraint);
 }
 
 export function getAxisFriction(state: RapierPluginState, constraint: PhysicsConstraint, axis: PhysicsConstraintAxis): Nullable<number> {
@@ -292,26 +293,37 @@ function applyMotorToJoint(state: RapierPluginState, constraint: PhysicsConstrai
 
   const cType = (constraint as any)._type as PhysicsConstraintType;
 
+  let config: AxisConfig | undefined;
   if (cType === PhysicsConstraintType.HINGE) {
-    const config = getAxisConfig(state, constraint, PhysicsConstraintAxis.ANGULAR_X);
-    if (config?.motorTarget !== undefined) {
-      const maxForce = config.motorMaxForce ?? 1000;
-      if (config.motorType === PhysicsConstraintMotorType.VELOCITY) {
-        (joint as any).configureMotorVelocity?.(config.motorTarget, maxForce);
-      } else {
-        (joint as any).configureMotorPosition?.(config.motorTarget, maxForce, 0);
-      }
-    }
+    config = getAxisConfig(state, constraint, PhysicsConstraintAxis.ANGULAR_X);
   } else if (cType === PhysicsConstraintType.SLIDER || cType === PhysicsConstraintType.PRISMATIC) {
-    const config = getAxisConfig(state, constraint, PhysicsConstraintAxis.LINEAR_X);
-    if (config?.motorTarget !== undefined) {
-      const maxForce = config.motorMaxForce ?? 1000;
-      if (config.motorType === PhysicsConstraintMotorType.VELOCITY) {
-        (joint as any).configureMotorVelocity?.(config.motorTarget, maxForce);
-      } else {
-        (joint as any).configureMotorPosition?.(config.motorTarget, maxForce, 0);
-      }
-    }
+    config = getAxisConfig(state, constraint, PhysicsConstraintAxis.LINEAR_X);
+  }
+
+  if (!config) return;
+
+  const target = config.motorTarget ?? 0;
+  const stiffness = 1000;
+  const damping = 100;
+  const friction = config.friction ?? 0;
+
+  if (config.motorType === PhysicsConstraintMotorType.VELOCITY) {
+    (joint as any).configureMotorVelocity?.(target, damping);
+  } else if (config.motorType === PhysicsConstraintMotorType.POSITION) {
+    (joint as any).configureMotorPosition?.(target, stiffness, damping);
+  } else if (friction > 0) {
+    // NONE with friction — velocity motor targeting 0, friction as damping
+    (joint as any).configureMotorVelocity?.(0, friction);
+  } else if (config.motorType !== undefined) {
+    // NONE, no friction — fully neutralize
+    (joint as any).configureMotor?.(0, 0, 0, 0);
+    (joint as any).setMotorMaxForce?.(0);
+  } else {
+    return; // no motor configured at all
+  }
+
+  if (config.motorMaxForce !== undefined) {
+    (joint as any).setMotorMaxForce?.(config.motorMaxForce);
   }
 }
 

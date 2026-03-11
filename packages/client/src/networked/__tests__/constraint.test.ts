@@ -36,6 +36,7 @@ const mockJoint = {
   setLimits: vi.fn(),
   configureMotorVelocity: vi.fn(),
   configureMotorPosition: vi.fn(),
+  setMotorMaxForce: vi.fn(),
 };
 
 const mockWorld = {
@@ -317,6 +318,9 @@ describe('NetworkedRapierPlugin constraint lifecycle', () => {
 
     const constraint = makeMockConstraint();
     plugin.addConstraint(bodyA, bodyB, constraint);
+
+    // Flush double-deferred microtasks so the constraint creation is sent
+    await new Promise<void>((resolve) => queueMicrotask(() => queueMicrotask(resolve)));
 
     const netId = (plugin as any).constraintToNetId.get(constraint);
 

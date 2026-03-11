@@ -178,6 +178,8 @@ export interface ConstraintUpdates {
     motorType?: number;
     motorTarget?: number;
     motorMaxForce?: number;
+    stiffness?: number;
+    damping?: number;
   }>;
 }
 

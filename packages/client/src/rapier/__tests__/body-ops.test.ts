@@ -487,12 +487,12 @@ describe('computeMassProperties / getMassProperties', () => {
 
     const props = computeMassProperties(state, body);
     expect(props.mass).toBe(25);
-    expect(props.centerOfMass.x).toBe(0.5);
-    expect(props.centerOfMass.y).toBe(0.6);
-    expect(props.centerOfMass.z).toBe(0.7);
-    expect(props.inertia.x).toBe(2);
-    expect(props.inertia.y).toBe(3);
-    expect(props.inertia.z).toBe(4);
+    expect(props.centerOfMass!.x).toBe(0.5);
+    expect(props.centerOfMass!.y).toBe(0.6);
+    expect(props.centerOfMass!.z).toBe(0.7);
+    expect(props.inertia!.x).toBe(2);
+    expect(props.inertia!.y).toBe(3);
+    expect(props.inertia!.z).toBe(4);
   });
 
   it('should return defaults when no rigid body is mapped', () => {

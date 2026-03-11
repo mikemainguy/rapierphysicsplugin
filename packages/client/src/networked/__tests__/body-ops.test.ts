@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PhysicsMotionType, PhysicsShapeType, Vector3 } from '@babylonjs/core';
+import type { BoxShapeParams, SphereShapeParams, CapsuleShapeParams, CylinderShapeParams, MeshShapeParams, ConvexHullShapeParams, HeightfieldShapeParams, ContainerShapeParams } from '@rapierphysicsplugin/shared';
 import type { NetworkedPluginState } from '../types.js';
 import {
   onInitBody,
@@ -546,7 +547,7 @@ describe('shapeInfoToDescriptor', () => {
 
     expect(desc).not.toBeNull();
     expect(desc!.type).toBe('box');
-    expect(desc!.params.halfExtents).toEqual({ x: 2, y: 3, z: 4 });
+    expect((desc!.params as BoxShapeParams).halfExtents).toEqual({ x: 2, y: 3, z: 4 });
   });
 
   it('should use default extents for BOX when not provided', () => {
@@ -555,7 +556,7 @@ describe('shapeInfoToDescriptor', () => {
       options: {},
     });
 
-    expect(desc!.params.halfExtents).toEqual({ x: 0.5, y: 0.5, z: 0.5 });
+    expect((desc!.params as BoxShapeParams).halfExtents).toEqual({ x: 0.5, y: 0.5, z: 0.5 });
   });
 
   it('should convert SPHERE shape', () => {
@@ -565,7 +566,7 @@ describe('shapeInfoToDescriptor', () => {
     });
 
     expect(desc!.type).toBe('sphere');
-    expect(desc!.params.radius).toBe(2.5);
+    expect((desc!.params as SphereShapeParams).radius).toBe(2.5);
   });
 
   it('should use default radius for SPHERE when not provided', () => {
@@ -574,7 +575,7 @@ describe('shapeInfoToDescriptor', () => {
       options: {},
     });
 
-    expect(desc!.params.radius).toBe(0.5);
+    expect((desc!.params as SphereShapeParams).radius).toBe(0.5);
   });
 
   it('should convert CAPSULE shape', () => {
@@ -588,8 +589,8 @@ describe('shapeInfoToDescriptor', () => {
     });
 
     expect(desc!.type).toBe('capsule');
-    expect(desc!.params.halfHeight).toBeCloseTo(2);
-    expect(desc!.params.radius).toBe(0.3);
+    expect((desc!.params as CapsuleShapeParams).halfHeight).toBeCloseTo(2);
+    expect((desc!.params as CapsuleShapeParams).radius).toBe(0.3);
   });
 
   it('should convert CYLINDER shape', () => {
@@ -603,8 +604,8 @@ describe('shapeInfoToDescriptor', () => {
     });
 
     expect(desc!.type).toBe('cylinder');
-    expect(desc!.params.halfHeight).toBeCloseTo(1);
-    expect(desc!.params.radius).toBe(0.5);
+    expect((desc!.params as CylinderShapeParams).halfHeight).toBeCloseTo(1);
+    expect((desc!.params as CylinderShapeParams).radius).toBe(0.5);
   });
 
   it('should convert MESH shape with valid mesh data', () => {
@@ -614,13 +615,13 @@ describe('shapeInfoToDescriptor', () => {
         mesh: {
           getVerticesData: vi.fn(() => [0, 0, 0, 1, 0, 0, 0, 1, 0]),
           getIndices: vi.fn(() => [0, 1, 2]),
-        },
+        } as any,
       },
     });
 
     expect(desc!.type).toBe('mesh');
-    expect(desc!.params.vertices).toBeInstanceOf(Float32Array);
-    expect(desc!.params.indices).toBeInstanceOf(Uint32Array);
+    expect((desc!.params as MeshShapeParams).vertices).toBeInstanceOf(Float32Array);
+    expect((desc!.params as MeshShapeParams).indices).toBeInstanceOf(Uint32Array);
   });
 
   it('should return null for MESH shape without mesh data', () => {
@@ -637,7 +638,7 @@ describe('shapeInfoToDescriptor', () => {
         mesh: {
           getVerticesData: vi.fn(() => null),
           getIndices: vi.fn(() => null),
-        },
+        } as any,
       },
     })).toBeNull();
   });
@@ -648,12 +649,12 @@ describe('shapeInfoToDescriptor', () => {
       options: {
         mesh: {
           getVerticesData: vi.fn(() => [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]),
-        },
+        } as any,
       },
     });
 
     expect(desc!.type).toBe('convex_hull');
-    expect(desc!.params.vertices).toBeInstanceOf(Float32Array);
+    expect((desc!.params as ConvexHullShapeParams).vertices).toBeInstanceOf(Float32Array);
   });
 
   it('should return null for CONVEX_HULL without mesh', () => {
@@ -677,11 +678,11 @@ describe('shapeInfoToDescriptor', () => {
     });
 
     expect(desc!.type).toBe('heightfield');
-    expect(desc!.params.heights).toBe(heights);
-    expect(desc!.params.numSamplesX).toBe(2);
-    expect(desc!.params.numSamplesZ).toBe(2);
-    expect(desc!.params.sizeX).toBe(10);
-    expect(desc!.params.sizeZ).toBe(10);
+    expect((desc!.params as HeightfieldShapeParams).heights).toBe(heights);
+    expect((desc!.params as HeightfieldShapeParams).numSamplesX).toBe(2);
+    expect((desc!.params as HeightfieldShapeParams).numSamplesZ).toBe(2);
+    expect((desc!.params as HeightfieldShapeParams).sizeX).toBe(10);
+    expect((desc!.params as HeightfieldShapeParams).sizeZ).toBe(10);
   });
 
   it('should extract heightfield from groundMesh', () => {
@@ -710,11 +711,11 @@ describe('shapeInfoToDescriptor', () => {
     });
 
     expect(desc!.type).toBe('heightfield');
-    expect(desc!.params.numSamplesX).toBe(2);
-    expect(desc!.params.numSamplesZ).toBe(2);
-    expect(desc!.params.sizeX).toBe(10);
-    expect(desc!.params.sizeZ).toBe(10);
-    expect(desc!.params.heights).toBeInstanceOf(Float32Array);
+    expect((desc!.params as HeightfieldShapeParams).numSamplesX).toBe(2);
+    expect((desc!.params as HeightfieldShapeParams).numSamplesZ).toBe(2);
+    expect((desc!.params as HeightfieldShapeParams).sizeX).toBe(10);
+    expect((desc!.params as HeightfieldShapeParams).sizeZ).toBe(10);
+    expect((desc!.params as HeightfieldShapeParams).heights).toBeInstanceOf(Float32Array);
   });
 
   it('should return null for HEIGHTFIELD with no data', () => {
@@ -748,9 +749,9 @@ describe('shapeInfoToDescriptor', () => {
     );
 
     expect(desc!.type).toBe('container');
-    expect(desc!.params.children).toHaveLength(1);
-    expect(desc!.params.children[0].shape.type).toBe('sphere');
-    expect(desc!.params.children[0].translation).toEqual({ x: 1, y: 0, z: 0 });
+    expect((desc!.params as ContainerShapeParams).children).toHaveLength(1);
+    expect((desc!.params as ContainerShapeParams).children[0].shape.type).toBe('sphere');
+    expect((desc!.params as ContainerShapeParams).children[0].translation).toEqual({ x: 1, y: 0, z: 0 });
   });
 
   it('should return null for CONTAINER with no children', () => {

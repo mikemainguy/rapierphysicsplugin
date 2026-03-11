@@ -1,6 +1,6 @@
 {
   "name": "rapierphysicsplugin",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "packageManager": "yarn@4.13.0",
   "license": "MIT",
   "description": "shared code for rapier client and server",
