@@ -132,8 +132,23 @@ Falls back to `wasm-compat` automatically if SIMD is unavailable.
 
 See the [Usage Guide](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/USAGE.md) for detailed documentation on all features, differences from Havok, and known limitations.
 
+## Reporting Issues
+
+```bash
+# Interactive — walks you through type, title, description, environment
+npx @rapierphysicsplugin/cli
+
+# Non-interactive — provide flags directly
+npx @rapierphysicsplugin/cli --type bug --title "Crash on startup"
+npx @rapierphysicsplugin/cli --type feature --title "Add X" --description "..." --no-open
+
+# Standard npm way — opens GitHub issues page
+npm bugs @rapierphysicsplugin/server
+```
+
 ## Release Notes
 
+- [v1.0.13](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_13.md) — CLI bug/feature reporting tool, GitHub issue templates, bugs field on all packages
 - [v1.0.12](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_12.md) — Joint axis friction, motor system overhaul, constraint update buffering, hinge motor demo
 - [v1.0.11](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_11.md) — Fix heightfield nrows/ncols axis swap and column-major storage order
 - [v1.0.10](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_10.md) — Cylinder, convex hull, heightfield, and container shapes; msgpackr typed array serialization fix

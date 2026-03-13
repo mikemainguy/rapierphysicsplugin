@@ -109,6 +109,7 @@ npm bugs @rapierphysicsplugin/client
 
 ## Release Notes
 
+- [v1.0.13](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_13.md) — CLI bug/feature reporting tool, GitHub issue templates, bugs field on all packages
 - [v1.0.12](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_12.md) — Joint axis friction, motor system overhaul, constraint update buffering, hinge motor demo
 - [v1.0.11](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_11.md) — Fix heightfield nrows/ncols axis swap and column-major storage order
 - [v1.0.10](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_10.md) — Cylinder, convex hull, heightfield, and container shapes; msgpackr typed array serialization fix
