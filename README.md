@@ -93,6 +93,20 @@ The server is fully authoritative. Clients have no local physics simulation — 
 
 See the [Usage Guide](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/USAGE.md) for detailed documentation on all features, including bodies, shapes, constraints, motors, friction, collision events, queries, networking, differences from Havok, and known limitations.
 
+## Reporting Issues
+
+```bash
+# Interactive — walks you through type, title, description, environment
+npx @rapierphysicsplugin/cli
+
+# Non-interactive — provide flags directly
+npx @rapierphysicsplugin/cli --type bug --title "Crash on startup"
+npx @rapierphysicsplugin/cli --type feature --title "Add X" --description "..." --no-open
+
+# Standard npm way — opens GitHub issues page
+npm bugs @rapierphysicsplugin/client
+```
+
 ## Release Notes
 
 - [v1.0.12](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_12.md) — Joint axis friction, motor system overhaul, constraint update buffering, hinge motor demo

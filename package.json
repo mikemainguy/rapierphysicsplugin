@@ -1,6 +1,6 @@
 {
   "name": "rapierphysicsplugin",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "packageManager": "yarn@4.13.0",
   "license": "MIT",
   "description": "shared code for rapier client and server",
@@ -11,6 +11,9 @@
     "rapier",
     "multiuser"
   ],
+  "bugs": {
+    "url": "https://github.com/mikemainguy/rapierphysicsplugin/issues"
+  },
   "author": {
     "name": "Michael Mainguy",
     "email": "mike.mainguy@gmail.com",

@@ -1,6 +1,6 @@
 {
   "name": "@rapierphysicsplugin/shared",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -13,6 +13,9 @@
     "rapier",
     "multiuser"
   ],
+  "bugs": {
+    "url": "https://github.com/mikemainguy/rapierphysicsplugin/issues"
+  },
   "author": {
     "name": "Michael Mainguy",
     "email": "mike.mainguy@gmail.com",

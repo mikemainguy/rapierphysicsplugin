@@ -1,0 +1,41 @@
+{
+  "name": "@rapierphysicsplugin/cli",
+  "version": "1.0.13",
+  "type": "module",
+  "license": "MIT",
+  "description": "Report bugs and request features for rapierphysicsplugin",
+  "keywords": [
+    "babylonjs",
+    "physics",
+    "rapier",
+    "bug-report",
+    "cli"
+  ],
+  "author": {
+    "name": "Michael Mainguy",
+    "email": "mike.mainguy@gmail.com",
+    "url": "https://www.npmjs.com/~mmainguy"
+  },
+  "bin": {
+    "rapierphysicsplugin": "./dist/index.js"
+  },
+  "bugs": {
+    "url": "https://github.com/mikemainguy/rapierphysicsplugin/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mikemainguy/rapierphysicsplugin.git",
+    "directory": "packages/cli"
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.0.0",
+    "new-github-issue-url": "^1.1.0",
+    "open": "^10.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
