@@ -15,6 +15,7 @@ import {
   Mesh,
   BallAndSocketConstraint,
   HingeConstraint,
+  SpringConstraint,
   VertexBuffer,
 } from '@babylonjs/core';
 import type { IPhysicsCollisionEvent } from '@babylonjs/core';
@@ -246,6 +247,54 @@ async function main() {
     return hingeConstraint;
   }
 
+  // --- Spring Demo ---
+  let springCleanup: (() => void) | null = null;
+
+  function createSpringDemo() {
+    if (springCleanup) {
+      springCleanup();
+      springCleanup = null;
+    }
+
+    // Static anchor sphere (cyan) at (5, 5, 0)
+    const anchorMesh = MeshBuilder.CreateSphere('springAnchor', { diameter: 1 }, scene);
+    const anchorMat = new StandardMaterial('springAnchorMat', scene);
+    anchorMat.diffuseColor = new Color3(0.2, 0.8, 0.8);
+    anchorMesh.material = anchorMat;
+    anchorMesh.position.set(5, 5, 0);
+    const anchorAgg = new PhysicsAggregate(anchorMesh, PhysicsShapeType.SPHERE, { mass: 0, friction: 0.5, restitution: 0.3 }, scene);
+
+    // Dynamic sphere (yellow) offset below
+    const dynMesh = MeshBuilder.CreateSphere('springBall', { diameter: 1 }, scene);
+    const dynMat = new StandardMaterial('springBallMat', scene);
+    dynMat.diffuseColor = new Color3(1, 0.9, 0.2);
+    dynMesh.material = dynMat;
+    dynMesh.position.set(5, 5, 3);
+    const dynAgg = new PhysicsAggregate(dynMesh, PhysicsShapeType.SPHERE, { mass: 1, friction: 0.5, restitution: 0.3 }, scene);
+
+    // Spring constraint — connects at body origins, vertical axis
+    const springConstraint = new SpringConstraint(
+      new Vector3(0, 0, 0),   // pivot on anchor
+      new Vector3(0, 0, 0),   // pivot on dynamic
+      new Vector3(0, 1, 0),   // axis on anchor
+      new Vector3(0, 1, 0),   // axis on dynamic
+      1,                       // minDistance
+      5,                       // maxDistance (rest length)
+      5,                     // stiffness
+      2,                       // damping
+      scene,
+    );
+    anchorAgg.body.addConstraint(dynAgg.body, springConstraint);
+
+    springCleanup = () => {
+      springConstraint.dispose();
+      anchorAgg.dispose();
+      anchorMesh.dispose();
+      dynAgg.dispose();
+      dynMesh.dispose();
+    };
+  }
+
   // Only create scene bodies if they don't already exist on the server
   const knownIds = new Set(snapshot.bodies.map(b => b.id));
   if (!knownIds.has('ground')) createGround();
@@ -255,6 +304,7 @@ async function main() {
   if (!knownIds.has('hingePost')) {
     activeHingeConstraint = createHingeMotorDemo();
   }
+  if (!knownIds.has('springAnchor')) createSpringDemo();
 
   // 5. Start/Reset button
   const simButton = document.getElementById('simButton') as HTMLButtonElement;
@@ -268,6 +318,7 @@ async function main() {
     createGround();
     createConstraints();
     activeHingeConstraint = createHingeMotorDemo();
+    createSpringDemo();
     simButton.textContent = 'Reset';
   });
 
@@ -372,7 +423,7 @@ async function main() {
   });
 
   // 7. Click to apply impulse (left-click) or remove body (right-click)
-  const PROTECTED_NAMES = new Set(['ground', 'static', 'constrained', 'hingePost', 'hingeArm']);
+  const PROTECTED_NAMES = new Set(['ground', 'static', 'constrained', 'hingePost', 'hingeArm', 'springAnchor', 'springBall']);
 
   scene.onPointerDown = (evt, pickResult) => {
     if (!pickResult?.hit || !pickResult.pickedMesh) return;
