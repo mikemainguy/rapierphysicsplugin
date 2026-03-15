@@ -210,7 +210,7 @@ export function updateBodyInstances(
   }
 }
 
-function rebuildColliderDesc(state: RapierPluginState, shape: RAPIER.Shape): RAPIER.ColliderDesc | null {
+export function rebuildColliderDesc(state: RapierPluginState, shape: RAPIER.Shape): RAPIER.ColliderDesc | null {
   const shapeType = shape.type;
   const RAPIER = state.rapier;
 
@@ -225,6 +225,11 @@ function rebuildColliderDesc(state: RapierPluginState, shape: RAPIER.Shape): RAP
       return RAPIER.ColliderDesc.capsule((shape as any).halfHeight, (shape as any).radius);
     case RAPIER.ShapeType.Cylinder:
       return RAPIER.ColliderDesc.cylinder((shape as any).halfHeight, (shape as any).radius);
+    case RAPIER.ShapeType.ConvexPolyhedron: {
+      const vertices = (shape as any).vertices;
+      if (vertices) return RAPIER.ColliderDesc.convexHull(new Float32Array(vertices));
+      return null;
+    }
     default:
       return null;
   }

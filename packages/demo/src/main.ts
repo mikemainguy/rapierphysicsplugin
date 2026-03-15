@@ -351,16 +351,23 @@ async function main() {
       enableCollisionFlash(agg, mesh);
     }
 
-    for (let i = 0; i < numCones; i++) {
-      const id = `cone-${ts}-${i}`;
-      const mesh = MeshBuilder.CreateCylinder(id, { height: 1.2, diameterTop: 0, diameterBottom: 0.8, tessellation: 16 }, scene);
-      const mat = new StandardMaterial(`${id}Mat`, scene);
-      mat.diffuseColor = new Color3(0.8, 0.2, 0.8);
-      mat.specularColor = new Color3(0.3, 0.3, 0.3);
-      mesh.material = mat;
-      mesh.position = randomPos();
-      const agg = new PhysicsAggregate(mesh, PhysicsShapeType.CONVEX_HULL, { mass: 1, friction: 0.5, restitution: 0.3 }, scene);
-      enableCollisionFlash(agg, mesh);
+    if (numCones > 0) {
+      const coneId = `cones-${ts}`;
+      const coneSrc = MeshBuilder.CreateCylinder(coneId, { height: 1.2, diameterTop: 0, diameterBottom: 0.8, tessellation: 16 }, scene);
+      const coneMat = new StandardMaterial(`${coneId}Mat`, scene);
+      coneMat.diffuseColor = new Color3(0.8, 0.2, 0.8);
+      coneMat.specularColor = new Color3(0.3, 0.3, 0.3);
+      coneSrc.material = coneMat;
+      coneSrc.position = randomPos();
+      const srcAgg = new PhysicsAggregate(coneSrc, PhysicsShapeType.CONVEX_HULL, { mass: 1, friction: 0.5, restitution: 0.3 }, scene);
+      enableCollisionFlash(srcAgg, coneSrc);
+
+      for (let i = 1; i < numCones; i++) {
+        const inst = coneSrc.createInstance(`${coneId}-${i}`);
+        inst.position = randomPos();
+        const agg = new PhysicsAggregate(inst, PhysicsShapeType.CONVEX_HULL, { mass: 1, friction: 0.5, restitution: 0.3 }, scene);
+        enableCollisionFlash(agg, inst as unknown as Mesh);
+      }
     }
   });
 
@@ -377,7 +384,7 @@ async function main() {
       const point = pickResult.pickedPoint ?? mesh.position;
       mesh.physicsBody.applyImpulse(new Vector3(0, 4, 0), point);
     } else if (evt.button === 2) {
-      // Right-click: remove body (skip protected)
+      // Right-click: remove body (skip protected meshes)
       if (PROTECTED_NAMES.has(mesh.name)) return;
       mesh.physicsBody.dispose();
     }

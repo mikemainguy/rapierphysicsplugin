@@ -9,6 +9,7 @@ import type {
   Quaternion,
 } from '@babylonjs/core';
 import type { RapierPluginState } from './types.js';
+import { rebuildColliderDesc } from './body-ops.js';
 
 export function initShape(state: RapierPluginState, shape: PhysicsShape, type: PhysicsShapeType, options: PhysicsShapeParameters): void {
   let colliderDesc: RAPIER.ColliderDesc;
@@ -182,7 +183,7 @@ export function setShape(state: RapierPluginState, body: PhysicsBody, shape: Nul
         instanceColliders[i] = [collider];
         continue;
       }
-      const instDesc = state.shapeToColliderDesc.get(shape);
+      const instDesc = rebuildColliderDesc(state, collider.shape);
       if (!instDesc) continue;
       const instCollider = state.world.createCollider(instDesc, instRb);
       applyShapePropertiesToCollider(state, instCollider, shape);
