@@ -15,6 +15,7 @@ import type { ConstraintDescriptor } from '@rapierphysicsplugin/shared';
 import { createJointData } from '@rapierphysicsplugin/shared';
 import type { RapierPluginState, AxisConfig } from './types.js';
 import { v3toVec } from './types.js';
+import { getInstanceRigidBody } from './body-ops.js';
 
 export function buildConstraintDescriptor(constraint: PhysicsConstraint): ConstraintDescriptor {
   const opts = (constraint as any)._options ?? {};
@@ -88,11 +89,13 @@ export function initConstraint(
   constraint: PhysicsConstraint,
   body: PhysicsBody,
   childBody: PhysicsBody,
+  instanceIndex?: number,
+  childInstanceIndex?: number,
 ): void {
   if (state.constraintToJoint.has(constraint)) return;
 
-  const rbA = state.bodyToRigidBody.get(body);
-  const rbB = state.bodyToRigidBody.get(childBody);
+  const rbA = getInstanceRigidBody(state, body, instanceIndex);
+  const rbB = getInstanceRigidBody(state, childBody, childInstanceIndex);
   if (!rbA || !rbB) return;
 
   const joint = createJointFromConstraint(state, constraint, rbA, rbB);

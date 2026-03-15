@@ -26,6 +26,8 @@ import {
   setGravityFactor,
   getGravityFactor,
   setTargetTransform,
+  setPhysicsBodyTransformation,
+  setActivationControl,
 } from '../body-ops.js';
 
 // --- Minimal Rapier mocks ---
@@ -161,6 +163,8 @@ function makeState(overrides: Partial<RapierPluginState> = {}): RapierPluginStat
     compoundChildren: new Map(),
     bodyEventMask: new Map(),
     colliderHandleToBody: new Map(),
+    bodyToInstanceRigidBodies: new Map(),
+    bodyToInstanceColliders: new Map(),
     activeCollisionPairs: new Set(),
     onCollisionObservable: { notifyObservers: vi.fn() } as any,
     onCollisionEndedObservable: { notifyObservers: vi.fn() } as any,
@@ -757,5 +761,143 @@ describe('setTargetTransform', () => {
   it('should be a no-op when no rigid body exists', () => {
     setTargetTransform(state, makeMockBody('x'), makeBjsVector3(), makeBjsQuaternion());
     expect(rb.setNextKinematicTranslation).not.toHaveBeenCalled();
+  });
+});
+
+describe('setPhysicsBodyTransformation', () => {
+  let state: RapierPluginState;
+  let rb: any;
+  let body: any;
+
+  beforeEach(() => {
+    state = makeState();
+    rb = makeMockRigidBody();
+    body = makeMockBody('prestep');
+    state.bodyToRigidBody.set(body, rb);
+  });
+
+  it('should teleport (default) when getPrestepType returns TELEPORT (1)', () => {
+    body.getPrestepType = vi.fn(() => 1);
+    body.transformNode.absolutePosition = makeBjsVector3(10, 20, 30);
+    body.transformNode.absoluteRotationQuaternion = makeBjsQuaternion(0, 0.7, 0, 0.7);
+
+    setPhysicsBodyTransformation(state, body, body.transformNode);
+
+    expect(rb.setTranslation).toHaveBeenCalled();
+    const posArg = rb.setTranslation.mock.calls[0][0];
+    expect(posArg.x).toBe(10);
+    expect(posArg.y).toBe(20);
+    expect(posArg.z).toBe(30);
+
+    expect(rb.setRotation).toHaveBeenCalled();
+    const rotArg = rb.setRotation.mock.calls[0][0];
+    expect(rotArg.y).toBeCloseTo(0.7);
+    expect(rotArg.w).toBeCloseTo(0.7);
+  });
+
+  it('should use setTargetTransform when getPrestepType returns ACTION (2)', () => {
+    body.getPrestepType = vi.fn(() => 2);
+    body.transformNode.absolutePosition = makeBjsVector3(5, 6, 7);
+    body.transformNode.absoluteRotationQuaternion = makeBjsQuaternion(0, 0, 0, 1);
+
+    setPhysicsBodyTransformation(state, body, body.transformNode);
+
+    expect(rb.setNextKinematicTranslation).toHaveBeenCalled();
+    expect(rb.setNextKinematicRotation).toHaveBeenCalled();
+    // Should NOT use direct setTranslation
+    expect(rb.setTranslation).not.toHaveBeenCalled();
+  });
+
+  it('should be a no-op when getPrestepType returns DISABLED (0)', () => {
+    body.getPrestepType = vi.fn(() => 0);
+
+    setPhysicsBodyTransformation(state, body, body.transformNode);
+
+    expect(rb.setTranslation).not.toHaveBeenCalled();
+    expect(rb.setRotation).not.toHaveBeenCalled();
+    expect(rb.setNextKinematicTranslation).not.toHaveBeenCalled();
+  });
+
+  it('should be a no-op when node is null', () => {
+    body.getPrestepType = vi.fn(() => 1);
+
+    setPhysicsBodyTransformation(state, body, null as any);
+
+    expect(rb.setTranslation).not.toHaveBeenCalled();
+  });
+
+  it('should fall back to position when absolutePosition is not available', () => {
+    body.getPrestepType = vi.fn(() => 1);
+    body.transformNode.position = makeBjsVector3(1, 2, 3);
+    // No absolutePosition set
+
+    setPhysicsBodyTransformation(state, body, body.transformNode);
+
+    expect(rb.setTranslation).toHaveBeenCalled();
+    const posArg = rb.setTranslation.mock.calls[0][0];
+    expect(posArg.x).toBe(1);
+    expect(posArg.y).toBe(2);
+    expect(posArg.z).toBe(3);
+  });
+
+  it('should default to TELEPORT when getPrestepType is not defined', () => {
+    // No getPrestepType method on body
+    body.transformNode.absolutePosition = makeBjsVector3(4, 5, 6);
+    body.transformNode.absoluteRotationQuaternion = makeBjsQuaternion(0, 0, 0, 1);
+
+    setPhysicsBodyTransformation(state, body, body.transformNode);
+
+    expect(rb.setTranslation).toHaveBeenCalled();
+    expect(rb.setRotation).toHaveBeenCalled();
+  });
+
+  it('should skip rotation when no rotation quaternion is available', () => {
+    body.getPrestepType = vi.fn(() => 1);
+    body.transformNode.absolutePosition = makeBjsVector3(1, 2, 3);
+    // rotationQuaternion is null and no absoluteRotationQuaternion
+
+    setPhysicsBodyTransformation(state, body, body.transformNode);
+
+    expect(rb.setTranslation).toHaveBeenCalled();
+    expect(rb.setRotation).not.toHaveBeenCalled();
+  });
+});
+
+describe('setActivationControl', () => {
+  let state: RapierPluginState;
+  let rb: any;
+  let body: any;
+
+  beforeEach(() => {
+    state = makeState();
+    rb = makeMockRigidBody({
+      wakeUp: vi.fn(),
+      sleep: vi.fn(),
+    });
+    body = makeMockBody('activation');
+    state.bodyToRigidBody.set(body, rb);
+  });
+
+  it('should wake up body for SIMULATION_CONTROLLED (0)', () => {
+    setActivationControl(state, body, 0);
+    expect(rb.wakeUp).toHaveBeenCalled();
+    expect(rb.sleep).not.toHaveBeenCalled();
+  });
+
+  it('should wake up body for ALWAYS_ACTIVE (1)', () => {
+    setActivationControl(state, body, 1);
+    expect(rb.wakeUp).toHaveBeenCalled();
+    expect(rb.sleep).not.toHaveBeenCalled();
+  });
+
+  it('should sleep body for ALWAYS_INACTIVE (2)', () => {
+    setActivationControl(state, body, 2);
+    expect(rb.sleep).toHaveBeenCalled();
+    expect(rb.wakeUp).not.toHaveBeenCalled();
+  });
+
+  it('should be a no-op when no rigid body exists', () => {
+    setActivationControl(state, makeMockBody('x'), 0);
+    expect(rb.wakeUp).not.toHaveBeenCalled();
   });
 });

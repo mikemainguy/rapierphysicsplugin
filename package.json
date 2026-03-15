@@ -1,6 +1,6 @@
 {
   "name": "rapierphysicsplugin",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "packageManager": "yarn@4.13.0",
   "license": "MIT",
   "description": "shared code for rapier client and server",
@@ -34,10 +34,10 @@
     "publish:all": "yarn version:sync && yarn build && yarn workspaces foreach -A --no-private npm publish --access public && npm publish --access public"
   },
   "dependencies": {
-    "@rapierphysicsplugin/shared": "1.0.14",
-    "@rapierphysicsplugin/client": "1.0.14",
-    "@rapierphysicsplugin/server": "1.0.14",
-    "@rapierphysicsplugin/cli": "1.0.14"
+    "@rapierphysicsplugin/shared": "1.0.15",
+    "@rapierphysicsplugin/client": "1.0.15",
+    "@rapierphysicsplugin/server": "1.0.15",
+    "@rapierphysicsplugin/cli": "1.0.15"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^3.0.0",

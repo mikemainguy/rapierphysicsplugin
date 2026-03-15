@@ -4,7 +4,7 @@ vi.mock('@rapierphysicsplugin/shared', () => ({
   createJointData: vi.fn().mockReturnValue({ fake: 'jointData' }),
 }));
 
-vi.mock('../rapier/constraint-ops.js', () => ({
+vi.mock('../../rapier/constraint-ops.js', () => ({
   buildConstraintDescriptor: vi.fn().mockReturnValue({
     id: '',
     bodyIdA: '',
@@ -24,7 +24,7 @@ import {
   handleConstraintUpdated,
 } from '../constraint-ops.js';
 import { createJointData } from '@rapierphysicsplugin/shared';
-import { buildConstraintDescriptor } from '../rapier/constraint-ops.js';
+import { buildConstraintDescriptor } from '../../rapier/constraint-ops.js';
 
 function makeJointMock() {
   return {
@@ -86,7 +86,7 @@ describe('applyUpdatesToJoint', () => {
   it('sets limits from axis updates', () => {
     const joint = makeJointMock();
     applyUpdatesToJoint(joint as any, {
-      axisUpdates: [{ minLimit: -1, maxLimit: 1 }],
+      axisUpdates: [{ axis: 0, minLimit: -1, maxLimit: 1 }],
     });
     expect(joint.setLimits).toHaveBeenCalledWith(-1, 1);
   });
@@ -94,7 +94,7 @@ describe('applyUpdatesToJoint', () => {
   it('velocity motor (type=1) calls configureMotorVelocity', () => {
     const joint = makeJointMock();
     applyUpdatesToJoint(joint as any, {
-      axisUpdates: [{ motorType: 1, motorTarget: 5, damping: 50 }],
+      axisUpdates: [{ axis: 0, motorType: 1, motorTarget: 5, damping: 50 }],
     });
     expect(joint.configureMotorVelocity).toHaveBeenCalledWith(5, 50);
   });
@@ -102,7 +102,7 @@ describe('applyUpdatesToJoint', () => {
   it('position motor (type=2) calls configureMotorPosition', () => {
     const joint = makeJointMock();
     applyUpdatesToJoint(joint as any, {
-      axisUpdates: [{ motorType: 2, motorTarget: 3, stiffness: 500, damping: 200 }],
+      axisUpdates: [{ axis: 0, motorType: 2, motorTarget: 3, stiffness: 500, damping: 200 }],
     });
     expect(joint.configureMotorPosition).toHaveBeenCalledWith(3, 500, 200);
   });
@@ -110,7 +110,7 @@ describe('applyUpdatesToJoint', () => {
   it('NONE motor (type=0) with friction > 0 calls configureMotorVelocity(0, friction)', () => {
     const joint = makeJointMock();
     applyUpdatesToJoint(joint as any, {
-      axisUpdates: [{ motorType: 0, friction: 25 }],
+      axisUpdates: [{ axis: 0, motorType: 0, friction: 25 }],
     });
     expect(joint.configureMotorVelocity).toHaveBeenCalledWith(0, 25);
   });
@@ -118,7 +118,7 @@ describe('applyUpdatesToJoint', () => {
   it('NONE motor (type=0) with no friction calls configureMotor(0,0,0,0) and setMotorMaxForce(0)', () => {
     const joint = makeJointMock();
     applyUpdatesToJoint(joint as any, {
-      axisUpdates: [{ motorType: 0 }],
+      axisUpdates: [{ axis: 0, motorType: 0 }],
     });
     expect(joint.configureMotor).toHaveBeenCalledWith(0, 0, 0, 0);
     expect(joint.setMotorMaxForce).toHaveBeenCalledWith(0);
@@ -128,7 +128,7 @@ describe('applyUpdatesToJoint', () => {
     const joint = makeJointMock();
     // type=2 (position) without explicit target/stiffness/damping
     applyUpdatesToJoint(joint as any, {
-      axisUpdates: [{ motorType: 2 }],
+      axisUpdates: [{ axis: 0, motorType: 2 }],
     });
     expect(joint.configureMotorPosition).toHaveBeenCalledWith(0, 1000, 100);
   });
@@ -136,7 +136,7 @@ describe('applyUpdatesToJoint', () => {
   it('motorTarget update without existing config is a no-op', () => {
     const joint = makeJointMock();
     applyUpdatesToJoint(joint as any, {
-      axisUpdates: [{ motorTarget: 10 }],
+      axisUpdates: [{ axis: 0, motorTarget: 10 }],
     });
     expect(joint.configureMotorVelocity).not.toHaveBeenCalled();
     expect(joint.configureMotorPosition).not.toHaveBeenCalled();
@@ -147,14 +147,14 @@ describe('applyUpdatesToJoint', () => {
     const joint = makeJointMock();
     // First set up a velocity motor config
     applyUpdatesToJoint(joint as any, {
-      axisUpdates: [{ motorType: 1, motorTarget: 5, damping: 50 }],
+      axisUpdates: [{ axis: 0, motorType: 1, motorTarget: 5, damping: 50 }],
     });
     expect(joint.configureMotorVelocity).toHaveBeenCalledWith(5, 50);
     joint.configureMotorVelocity.mockClear();
 
     // Now update just the target
     applyUpdatesToJoint(joint as any, {
-      axisUpdates: [{ motorTarget: 20 }],
+      axisUpdates: [{ axis: 0, motorTarget: 20 }],
     });
     expect(joint.configureMotorVelocity).toHaveBeenCalledWith(20, 50);
   });
@@ -163,14 +163,14 @@ describe('applyUpdatesToJoint', () => {
     const joint = makeJointMock();
     // Set up a type=0 motor with friction
     applyUpdatesToJoint(joint as any, {
-      axisUpdates: [{ motorType: 0, friction: 10 }],
+      axisUpdates: [{ axis: 0, motorType: 0, friction: 10 }],
     });
     expect(joint.configureMotorVelocity).toHaveBeenCalledWith(0, 10);
     joint.configureMotorVelocity.mockClear();
 
     // Update friction
     applyUpdatesToJoint(joint as any, {
-      axisUpdates: [{ friction: 30 }],
+      axisUpdates: [{ axis: 0, friction: 30 }],
     });
     expect(joint.configureMotorVelocity).toHaveBeenCalledWith(0, 30);
   });
@@ -178,7 +178,7 @@ describe('applyUpdatesToJoint', () => {
   it('friction update without existing config is a no-op', () => {
     const joint = makeJointMock();
     applyUpdatesToJoint(joint as any, {
-      axisUpdates: [{ friction: 10 }],
+      axisUpdates: [{ axis: 0, friction: 10 }],
     });
     expect(joint.configureMotorVelocity).not.toHaveBeenCalled();
     expect(joint.configureMotorPosition).not.toHaveBeenCalled();
@@ -188,7 +188,7 @@ describe('applyUpdatesToJoint', () => {
   it('motorMaxForce calls setMotorMaxForce', () => {
     const joint = makeJointMock();
     applyUpdatesToJoint(joint as any, {
-      axisUpdates: [{ motorMaxForce: 999 }],
+      axisUpdates: [{ axis: 0, motorMaxForce: 999 }],
     });
     expect(joint.setMotorMaxForce).toHaveBeenCalledWith(999);
   });
@@ -197,13 +197,13 @@ describe('applyUpdatesToJoint', () => {
     const joint = makeJointMock();
     // First set up a motor with friction
     applyUpdatesToJoint(joint as any, {
-      axisUpdates: [{ motorType: 1, motorTarget: 5, damping: 50, friction: 15 }],
+      axisUpdates: [{ axis: 0, motorType: 1, motorTarget: 5, damping: 50, friction: 15 }],
     });
     joint.configureMotorVelocity.mockClear();
 
     // Now switch to type=0 without explicit friction -- should use stored friction
     applyUpdatesToJoint(joint as any, {
-      axisUpdates: [{ motorType: 0 }],
+      axisUpdates: [{ axis: 0, motorType: 0 }],
     });
     expect(joint.configureMotorVelocity).toHaveBeenCalledWith(0, 15);
   });

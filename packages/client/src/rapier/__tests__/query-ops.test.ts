@@ -98,6 +98,7 @@ describe('query-ops (rapier)', () => {
       const result = {
         setHitData: vi.fn(),
         calculateHitDistance: vi.fn(),
+        reset: vi.fn(),
       } as any;
 
       raycast(state, v3(0, 0, 0), v3(0, 10, 0), result);
@@ -111,7 +112,7 @@ describe('query-ops (rapier)', () => {
       const state = makeState();
       (state.world.castRayAndGetNormal as any).mockReturnValue(null);
 
-      const result = { setHitData: vi.fn(), calculateHitDistance: vi.fn() } as any;
+      const result = { setHitData: vi.fn(), calculateHitDistance: vi.fn(), reset: vi.fn() } as any;
 
       raycast(state, v3(0, 0, 0), v3(0, 10, 0), result);
 
@@ -121,7 +122,7 @@ describe('query-ops (rapier)', () => {
     it('applies filter flags when shouldHitTriggers is false', () => {
       const state = makeState();
       (state.world.castRayAndGetNormal as any).mockReturnValue(null);
-      const result = { setHitData: vi.fn(), calculateHitDistance: vi.fn() } as any;
+      const result = { setHitData: vi.fn(), calculateHitDistance: vi.fn(), reset: vi.fn() } as any;
 
       raycast(state, v3(0, 0, 0), v3(0, 10, 0), result, { shouldHitTriggers: false } as any);
 
@@ -133,13 +134,119 @@ describe('query-ops (rapier)', () => {
     it('applies filter groups from membership and collideWith', () => {
       const state = makeState();
       (state.world.castRayAndGetNormal as any).mockReturnValue(null);
-      const result = { setHitData: vi.fn(), calculateHitDistance: vi.fn() } as any;
+      const result = { setHitData: vi.fn(), calculateHitDistance: vi.fn(), reset: vi.fn() } as any;
 
       raycast(state, v3(0, 0, 0), v3(0, 10, 0), result, { membership: 0x0001, collideWith: 0x0002 } as any);
 
       const call = (state.world.castRayAndGetNormal as any).mock.calls[0];
       // filterGroups = (0x0001 << 16) | 0x0002
       expect(call[4]).toBe((0x0001 << 16) | 0x0002);
+    });
+
+    it('resets result before raycast', () => {
+      const state = makeState();
+      (state.world.castRayAndGetNormal as any).mockReturnValue(null);
+      const result = { setHitData: vi.fn(), calculateHitDistance: vi.fn(), reset: vi.fn() } as any;
+
+      raycast(state, v3(0, 0, 0), v3(0, 10, 0), result);
+
+      expect(result.reset).toHaveBeenCalled();
+    });
+
+    it('handles array of results using intersectionsWithRay for multi-hit', () => {
+      const state = makeState();
+
+      const mockBody = {} as any;
+      const mockShape = {} as any;
+      state.colliderHandleToBody.set(10, mockBody);
+      state.bodyToShape.set(mockBody, mockShape);
+
+      (state.world as any).intersectionsWithRay = vi.fn((ray: any, maxToi: any, solid: any, callback: any) => {
+        callback({ timeOfImpact: 2, normal: { x: 0, y: 1, z: 0 }, collider: { handle: 10 } });
+        callback({ timeOfImpact: 5, normal: { x: 1, y: 0, z: 0 }, collider: { handle: 10 } });
+      });
+
+      const results = [
+        { setHitData: vi.fn(), calculateHitDistance: vi.fn(), reset: vi.fn(), _body: null } as any,
+        { setHitData: vi.fn(), calculateHitDistance: vi.fn(), reset: vi.fn(), _body: null } as any,
+      ];
+
+      raycast(state, v3(0, 0, 0), v3(0, 10, 0), results);
+
+      expect((state.world as any).intersectionsWithRay).toHaveBeenCalled();
+      expect(results[0].setHitData).toHaveBeenCalled();
+      expect(results[0].calculateHitDistance).toHaveBeenCalled();
+      expect(results[1].setHitData).toHaveBeenCalled();
+      expect(results[1].calculateHitDistance).toHaveBeenCalled();
+      expect(results[0]._body).toBe(mockBody);
+      expect(results[1]._body).toBe(mockBody);
+    });
+
+    it('stops collecting multi-hit results when array is full', () => {
+      const state = makeState();
+
+      (state.world as any).intersectionsWithRay = vi.fn((ray: any, maxToi: any, solid: any, callback: any) => {
+        const cont1 = callback({ timeOfImpact: 2, normal: { x: 0, y: 1, z: 0 }, collider: { handle: 1 } });
+        expect(cont1).toBe(true);
+        const cont2 = callback({ timeOfImpact: 5, normal: { x: 1, y: 0, z: 0 }, collider: { handle: 2 } });
+        expect(cont2).toBe(true);
+        // Array is now full (2 slots filled), next call should return false
+        const cont3 = callback({ timeOfImpact: 8, normal: { x: 0, y: 0, z: 1 }, collider: { handle: 3 } });
+        expect(cont3).toBe(false);
+      });
+
+      const results = [
+        { setHitData: vi.fn(), calculateHitDistance: vi.fn(), reset: vi.fn() } as any,
+        { setHitData: vi.fn(), calculateHitDistance: vi.fn(), reset: vi.fn() } as any,
+      ];
+
+      raycast(state, v3(0, 0, 0), v3(0, 10, 0), results);
+
+      expect(results[0].setHitData).toHaveBeenCalled();
+      expect(results[1].setHitData).toHaveBeenCalled();
+    });
+
+    it('resets all results in array', () => {
+      const state = makeState();
+      (state.world as any).intersectionsWithRay = vi.fn();
+
+      const results = [
+        { setHitData: vi.fn(), calculateHitDistance: vi.fn(), reset: vi.fn() } as any,
+        { setHitData: vi.fn(), calculateHitDistance: vi.fn(), reset: vi.fn() } as any,
+        { setHitData: vi.fn(), calculateHitDistance: vi.fn(), reset: vi.fn() } as any,
+      ];
+
+      raycast(state, v3(0, 0, 0), v3(0, 10, 0), results);
+
+      for (const r of results) {
+        expect(r.reset).toHaveBeenCalled();
+      }
+    });
+
+    it('handles empty array without error', () => {
+      const state = makeState();
+      (state.world as any).intersectionsWithRay = vi.fn();
+
+      raycast(state, v3(0, 0, 0), v3(0, 10, 0), []);
+
+      expect((state.world as any).intersectionsWithRay).toHaveBeenCalled();
+    });
+
+    it('uses single-hit path for array with length 1', () => {
+      const state = makeState();
+      (state.world.castRayAndGetNormal as any).mockReturnValue({
+        timeOfImpact: 3,
+        normal: { x: 0, y: 1, z: 0 },
+      });
+
+      const results = [
+        { setHitData: vi.fn(), calculateHitDistance: vi.fn(), reset: vi.fn() } as any,
+      ];
+
+      raycast(state, v3(0, 0, 0), v3(0, 10, 0), results);
+
+      expect(state.world.castRayAndGetNormal).toHaveBeenCalled();
+      expect(results[0].setHitData).toHaveBeenCalled();
     });
   });
 

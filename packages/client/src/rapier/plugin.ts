@@ -80,6 +80,8 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
   public colliderHandleToBody = new Map<number, PhysicsBody>();
   public activeCollisionPairs = new Set<string>();
   public shapeRawData = new Map<PhysicsShape, ShapeRawData>();
+  public bodyToInstanceRigidBodies = new Map<PhysicsBody, RAPIER.RigidBody[]>();
+  public bodyToInstanceColliders = new Map<PhysicsBody, RAPIER.Collider[][]>();
 
   constructor(rapier: typeof RAPIER, gravity?: Vector3) {
     this.rapier = rapier;
@@ -108,6 +110,11 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
   getMaxAngularVelocity(): number { return this.maxAngularVelocity; }
 
   executeStep(_delta: number, bodies: Array<PhysicsBody>): void {
+    // Pre-step: sync transform nodes → physics bodies
+    for (const body of bodies) {
+      if ((body as any).disablePreStep) continue;
+      this.setPhysicsBodyTransformation(body, body.transformNode);
+    }
     this.world.step(this.eventQueue);
     processCollisionEvents(this, this.eventQueue);
     for (const body of bodies) {
@@ -121,8 +128,13 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
     bodyOps.initBody(this, body, motionType, position, orientation);
   }
 
-  initBodyInstances(_body: PhysicsBody, _motionType: PhysicsMotionType, _mesh: Mesh): void {}
-  updateBodyInstances(_body: PhysicsBody, _mesh: Mesh): void {}
+  initBodyInstances(body: PhysicsBody, motionType: PhysicsMotionType, mesh: Mesh): void {
+    bodyOps.initBodyInstances(this, body, motionType, mesh);
+  }
+
+  updateBodyInstances(body: PhysicsBody, mesh: Mesh): void {
+    bodyOps.updateBodyInstances(this, body, mesh);
+  }
 
   removeBody(body: PhysicsBody): void { this.disposeBody(body); }
   disposeBody(body: PhysicsBody): void { bodyOps.disposeBody(this, body); }
@@ -172,60 +184,72 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
 
   setTrigger(shape: PhysicsShape, isTrigger: boolean): void { shapeOps.setTrigger(this, shape, isTrigger); }
 
-  setCollisionCallbackEnabled(body: PhysicsBody, enabled: boolean, _instanceIndex?: number): void {
+  setCollisionCallbackEnabled(body: PhysicsBody, enabled: boolean, instanceIndex?: number): void {
     if (enabled) { this.collisionCallbackEnabled.add(body); } else { this.collisionCallbackEnabled.delete(body); }
   }
 
-  setCollisionEndedCallbackEnabled(body: PhysicsBody, enabled: boolean, _instanceIndex?: number): void {
+  setCollisionEndedCallbackEnabled(body: PhysicsBody, enabled: boolean, instanceIndex?: number): void {
     if (enabled) { this.collisionEndedCallbackEnabled.add(body); } else { this.collisionEndedCallbackEnabled.delete(body); }
   }
 
   // --- Event mask ---
 
-  setEventMask(body: PhysicsBody, eventMask: number, _instanceIndex?: number): void { this.bodyEventMask.set(body, eventMask); }
-  getEventMask(body: PhysicsBody, _instanceIndex?: number): number { return this.bodyEventMask.get(body) ?? 0; }
+  setEventMask(body: PhysicsBody, eventMask: number, instanceIndex?: number): void { this.bodyEventMask.set(body, eventMask); }
+  getEventMask(body: PhysicsBody, instanceIndex?: number): number { return this.bodyEventMask.get(body) ?? 0; }
 
   // --- Motion type ---
 
-  setMotionType(body: PhysicsBody, motionType: PhysicsMotionType, _instanceIndex?: number): void { bodyOps.setMotionType(this, body, motionType); }
-  getMotionType(body: PhysicsBody, _instanceIndex?: number): PhysicsMotionType { return bodyOps.getMotionType(this, body); }
+  setMotionType(body: PhysicsBody, motionType: PhysicsMotionType, instanceIndex?: number): void { bodyOps.setMotionType(this, body, motionType, instanceIndex); }
+  getMotionType(body: PhysicsBody, instanceIndex?: number): PhysicsMotionType { return bodyOps.getMotionType(this, body, instanceIndex); }
 
   // --- Mass properties ---
 
-  computeMassProperties(body: PhysicsBody, _instanceIndex?: number): PhysicsMassProperties { return bodyOps.computeMassProperties(this, body); }
-  setMassProperties(body: PhysicsBody, massProps: PhysicsMassProperties, _instanceIndex?: number): void { bodyOps.setMassProperties(this, body, massProps); }
-  getMassProperties(body: PhysicsBody, _instanceIndex?: number): PhysicsMassProperties { return bodyOps.getMassProperties(this, body); }
+  computeMassProperties(body: PhysicsBody, instanceIndex?: number): PhysicsMassProperties { return bodyOps.computeMassProperties(this, body, instanceIndex); }
+  setMassProperties(body: PhysicsBody, massProps: PhysicsMassProperties, instanceIndex?: number): void { bodyOps.setMassProperties(this, body, massProps, instanceIndex); }
+  getMassProperties(body: PhysicsBody, instanceIndex?: number): PhysicsMassProperties { return bodyOps.getMassProperties(this, body, instanceIndex); }
 
   // --- Damping ---
 
-  setLinearDamping(body: PhysicsBody, damping: number, _instanceIndex?: number): void { bodyOps.setLinearDamping(this, body, damping); }
-  getLinearDamping(body: PhysicsBody, _instanceIndex?: number): number { return bodyOps.getLinearDamping(this, body); }
-  setAngularDamping(body: PhysicsBody, damping: number, _instanceIndex?: number): void { bodyOps.setAngularDamping(this, body, damping); }
-  getAngularDamping(body: PhysicsBody, _instanceIndex?: number): number { return bodyOps.getAngularDamping(this, body); }
+  setLinearDamping(body: PhysicsBody, damping: number, instanceIndex?: number): void { bodyOps.setLinearDamping(this, body, damping, instanceIndex); }
+  getLinearDamping(body: PhysicsBody, instanceIndex?: number): number { return bodyOps.getLinearDamping(this, body, instanceIndex); }
+  setAngularDamping(body: PhysicsBody, damping: number, instanceIndex?: number): void { bodyOps.setAngularDamping(this, body, damping, instanceIndex); }
+  getAngularDamping(body: PhysicsBody, instanceIndex?: number): number { return bodyOps.getAngularDamping(this, body, instanceIndex); }
 
   // --- Velocity ---
 
-  setLinearVelocity(body: PhysicsBody, linVel: Vector3, _instanceIndex?: number): void { bodyOps.setLinearVelocity(this, body, linVel); }
-  getLinearVelocityToRef(body: PhysicsBody, linVel: Vector3, _instanceIndex?: number): void { bodyOps.getLinearVelocityToRef(this, body, linVel); }
-  setAngularVelocity(body: PhysicsBody, angVel: Vector3, _instanceIndex?: number): void { bodyOps.setAngularVelocity(this, body, angVel); }
-  getAngularVelocityToRef(body: PhysicsBody, angVel: Vector3, _instanceIndex?: number): void { bodyOps.getAngularVelocityToRef(this, body, angVel); }
+  setLinearVelocity(body: PhysicsBody, linVel: Vector3, instanceIndex?: number): void { bodyOps.setLinearVelocity(this, body, linVel, instanceIndex); }
+  getLinearVelocityToRef(body: PhysicsBody, linVel: Vector3, instanceIndex?: number): void { bodyOps.getLinearVelocityToRef(this, body, linVel, instanceIndex); }
+  setAngularVelocity(body: PhysicsBody, angVel: Vector3, instanceIndex?: number): void { bodyOps.setAngularVelocity(this, body, angVel, instanceIndex); }
+  getAngularVelocityToRef(body: PhysicsBody, angVel: Vector3, instanceIndex?: number): void { bodyOps.getAngularVelocityToRef(this, body, angVel, instanceIndex); }
 
   // --- Forces & impulses ---
 
-  applyImpulse(body: PhysicsBody, impulse: Vector3, location: Vector3, _instanceIndex?: number): void { bodyOps.applyImpulse(this, body, impulse, location); }
-  applyAngularImpulse(body: PhysicsBody, angularImpulse: Vector3, _instanceIndex?: number): void { bodyOps.applyAngularImpulse(this, body, angularImpulse); }
-  applyForce(body: PhysicsBody, force: Vector3, location: Vector3, _instanceIndex?: number): void { bodyOps.applyForce(this, body, force, location); }
-  applyTorque(body: PhysicsBody, torque: Vector3, _instanceIndex?: number): void { bodyOps.applyTorque(this, body, torque); }
+  applyImpulse(body: PhysicsBody, impulse: Vector3, location: Vector3, instanceIndex?: number): void { bodyOps.applyImpulse(this, body, impulse, location, instanceIndex); }
+  applyAngularImpulse(body: PhysicsBody, angularImpulse: Vector3, instanceIndex?: number): void { bodyOps.applyAngularImpulse(this, body, angularImpulse, instanceIndex); }
+  applyForce(body: PhysicsBody, force: Vector3, location: Vector3, instanceIndex?: number): void { bodyOps.applyForce(this, body, force, location, instanceIndex); }
+  applyTorque(body: PhysicsBody, torque: Vector3, instanceIndex?: number): void { bodyOps.applyTorque(this, body, torque, instanceIndex); }
 
   // --- Gravity factor ---
 
-  setGravityFactor(body: PhysicsBody, factor: number, _instanceIndex?: number): void { bodyOps.setGravityFactor(this, body, factor); }
-  getGravityFactor(body: PhysicsBody, _instanceIndex?: number): number { return bodyOps.getGravityFactor(this, body); }
+  setGravityFactor(body: PhysicsBody, factor: number, instanceIndex?: number): void { bodyOps.setGravityFactor(this, body, factor, instanceIndex); }
+  getGravityFactor(body: PhysicsBody, instanceIndex?: number): number { return bodyOps.getGravityFactor(this, body, instanceIndex); }
 
   // --- Target transform (kinematic) ---
 
-  setTargetTransform(body: PhysicsBody, position: Vector3, rotation: Quaternion, _instanceIndex?: number): void {
-    bodyOps.setTargetTransform(this, body, position, rotation);
+  setTargetTransform(body: PhysicsBody, position: Vector3, rotation: Quaternion, instanceIndex?: number): void {
+    bodyOps.setTargetTransform(this, body, position, rotation, instanceIndex);
+  }
+
+  // --- Pre-step transform sync ---
+
+  setPhysicsBodyTransformation(body: PhysicsBody, node: TransformNode): void {
+    bodyOps.setPhysicsBodyTransformation(this, body, node);
+  }
+
+  // --- Activation control ---
+
+  setActivationControl(body: PhysicsBody, controlMode: number): void {
+    bodyOps.setActivationControl(this, body, controlMode);
   }
 
   // --- Body geometry ---
@@ -240,9 +264,9 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
     constraintOps.initConstraint(this, constraint, body, childBody);
   }
 
-  addConstraint(body: PhysicsBody, childBody: PhysicsBody, constraint: PhysicsConstraint, _instanceIndex?: number, _childInstanceIndex?: number): void {
+  addConstraint(body: PhysicsBody, childBody: PhysicsBody, constraint: PhysicsConstraint, instanceIndex?: number, childInstanceIndex?: number): void {
     if (!this.constraintToJoint.has(constraint)) {
-      this.initConstraint(constraint, body, childBody);
+      constraintOps.initConstraint(this, constraint, body, childBody, instanceIndex, childInstanceIndex);
     }
   }
 
@@ -271,7 +295,7 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
 
   // --- Collision observables ---
 
-  getCollisionObservable(body: PhysicsBody, _instanceIndex?: number): Observable<IPhysicsCollisionEvent> {
+  getCollisionObservable(body: PhysicsBody, instanceIndex?: number): Observable<IPhysicsCollisionEvent> {
     let obs = this.bodyCollisionObservables.get(body);
     if (!obs) {
       obs = new Observable<IPhysicsCollisionEvent>();
@@ -280,7 +304,7 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
     return obs;
   }
 
-  getCollisionEndedObservable(body: PhysicsBody, _instanceIndex?: number): Observable<IBasePhysicsCollisionEvent> {
+  getCollisionEndedObservable(body: PhysicsBody, instanceIndex?: number): Observable<IBasePhysicsCollisionEvent> {
     let obs = this.bodyCollisionEndedObservables.get(body);
     if (!obs) {
       obs = new Observable<IBasePhysicsCollisionEvent>();
@@ -291,7 +315,7 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
 
   // --- Raycast ---
 
-  raycast(from: Vector3, to: Vector3, result: PhysicsRaycastResult, query?: IRaycastQuery): void {
+  raycast(from: Vector3, to: Vector3, result: PhysicsRaycastResult | Array<PhysicsRaycastResult>, query?: IRaycastQuery): void {
     queryOps.raycast(this, from, to, result, query);
   }
 
@@ -336,6 +360,8 @@ export class RapierPlugin implements IPhysicsEnginePluginV2 {
     this.shapeFilterMembership.clear();
     this.shapeFilterCollide.clear();
     this.shapeRawData.clear();
+    this.bodyToInstanceRigidBodies.clear();
+    this.bodyToInstanceColliders.clear();
   }
 
   // --- Rapier-specific helpers for sync module ---

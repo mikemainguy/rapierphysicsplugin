@@ -91,6 +91,8 @@ function makeNetworkedState(overrides: Partial<NetworkedPluginState> = {}): Netw
     compoundChildren: new Map(),
     bodyEventMask: new Map(),
     colliderHandleToBody: new Map(),
+    bodyToInstanceRigidBodies: new Map(),
+    bodyToInstanceColliders: new Map(),
     activeCollisionPairs: new Set(),
     onCollisionObservable: { notifyObservers: vi.fn() } as any,
     onCollisionEndedObservable: { notifyObservers: vi.fn() } as any,

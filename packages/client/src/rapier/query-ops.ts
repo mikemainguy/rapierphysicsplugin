@@ -70,7 +70,7 @@ function findBodyForColliderHandle(state: RapierPluginState, handle: number): { 
   return { body, shape };
 }
 
-export function raycast(state: RapierPluginState, from: Vector3, to: Vector3, result: PhysicsRaycastResult, query?: IRaycastQuery): void {
+export function raycast(state: RapierPluginState, from: Vector3, to: Vector3, result: PhysicsRaycastResult | Array<PhysicsRaycastResult>, query?: IRaycastQuery): void {
   const dir = to.subtract(from);
   const maxToi = dir.length();
   const normalizedDir = dir.normalize();
@@ -94,15 +94,39 @@ export function raycast(state: RapierPluginState, from: Vector3, to: Vector3, re
     }
   }
 
+  const results = Array.isArray(result) ? result : [result];
+  for (const r of results) r.reset();
+
+  // Multi-hit path: use intersectionsWithRay callback
+  if (Array.isArray(result) && results.length !== 1) {
+    let hitIndex = 0;
+    state.world.intersectionsWithRay(ray, maxToi, true, (hit: any) => {
+      if (hitIndex >= results.length) return false;
+      const hitPoint = ray.pointAt(hit.timeOfImpact);
+      const hitNormal = hit.normal;
+      results[hitIndex].setHitData(
+        new Vector3(hitNormal.x, hitNormal.y, hitNormal.z),
+        new Vector3(hitPoint.x, hitPoint.y, hitPoint.z)
+      );
+      results[hitIndex].calculateHitDistance();
+      const info = findBodyForColliderHandle(state, hit.collider?.handle);
+      if (info) (results[hitIndex] as any)._body = info.body;
+      hitIndex++;
+      return true;
+    }, filterFlags, filterGroups);
+    return;
+  }
+
+  // Single-hit path
   const hit = state.world.castRayAndGetNormal(ray, maxToi, true, filterFlags, filterGroups);
   if (hit) {
     const hitPoint = ray.pointAt(hit.timeOfImpact);
     const hitNormal = hit.normal;
-    result.setHitData(
+    results[0].setHitData(
       new Vector3(hitNormal.x, hitNormal.y, hitNormal.z),
       new Vector3(hitPoint.x, hitPoint.y, hitPoint.z)
     );
-    result.calculateHitDistance();
+    results[0].calculateHitDistance();
   }
 }
 

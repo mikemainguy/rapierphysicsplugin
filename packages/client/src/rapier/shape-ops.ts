@@ -170,6 +170,27 @@ export function setShape(state: RapierPluginState, body: PhysicsBody, shape: Nul
   applyShapePropertiesToCollider(state, collider, shape);
   state.colliderHandleToBody.set(collider.handle, body);
   state.bodyToColliders.set(body, [collider]);
+
+  // Create colliders for each instance RigidBody
+  const instanceBodies = state.bodyToInstanceRigidBodies.get(body);
+  if (instanceBodies) {
+    const instanceColliders = state.bodyToInstanceColliders.get(body) ?? [];
+    for (let i = 0; i < instanceBodies.length; i++) {
+      const instRb = instanceBodies[i];
+      // Skip instance 0 if it shares the same rb as the single-body entry
+      if (instRb === rb) {
+        instanceColliders[i] = [collider];
+        continue;
+      }
+      const instDesc = state.shapeToColliderDesc.get(shape);
+      if (!instDesc) continue;
+      const instCollider = state.world.createCollider(instDesc, instRb);
+      applyShapePropertiesToCollider(state, instCollider, shape);
+      state.colliderHandleToBody.set(instCollider.handle, body);
+      instanceColliders[i] = [instCollider];
+    }
+    state.bodyToInstanceColliders.set(body, instanceColliders);
+  }
 }
 
 export function disposeShape(state: RapierPluginState, shape: PhysicsShape): void {
