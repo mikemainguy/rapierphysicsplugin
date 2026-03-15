@@ -19,7 +19,7 @@ import {
   VertexBuffer,
 } from '@babylonjs/core';
 import type { IPhysicsCollisionEvent } from '@babylonjs/core';
-import { NetworkedRapierPlugin } from '@rapierphysicsplugin/client';
+import { NetworkedRapierPlugin, RapierCharacterController, CharacterSupportedState } from '@rapierphysicsplugin/client';
 import { loadRapier, detectSIMDSupport, ComputeBackend } from '@rapierphysicsplugin/shared';
 import type { ShapeDescriptor } from '@rapierphysicsplugin/shared';
 import '@babylonjs/inspector';
@@ -518,6 +518,116 @@ async function main() {
     }
   });
 
+  // --- Keyboard input tracking ---
+  const keysDown = new Set<string>();
+  window.addEventListener('keydown', (e) => {
+    keysDown.add(e.code);
+    if (e.key === 'i' || e.key === 'I') {
+      if (scene.debugLayer.isVisible()) {
+        scene.debugLayer.hide();
+      } else {
+        scene.debugLayer.show({ embedMode: true });
+      }
+    }
+  });
+  window.addEventListener('keyup', (e) => keysDown.delete(e.code));
+
+  // --- Character Controller ---
+  let characterController: RapierCharacterController | null = null;
+  let characterMesh: Mesh | null = null;
+  let characterMat: StandardMaterial | null = null;
+
+  function createCharacter() {
+    characterMat = new StandardMaterial('charMat', scene);
+    characterMat.diffuseColor = new Color3(0.7, 0.85, 1);
+    characterMat.specularColor = new Color3(0.3, 0.3, 0.3);
+
+    characterMesh = MeshBuilder.CreateCapsule('character', { height: 1.6, radius: 0.3 }, scene);
+    characterMesh.material = characterMat;
+    characterMesh.position.set(0, 3, 0);
+
+    PROTECTED_NAMES.add('character');
+
+    characterController = new RapierCharacterController(
+      new Vector3(0, 3, 0),
+      { capsuleHeight: 1, capsuleRadius: 0.3 },
+      plugin as any,
+    );
+    characterController.enableAutostep(0.4, 0.2, true);
+    characterController.enableSnapToGround(0.3);
+    characterController.characterStrength = true;
+    characterController.characterMass = 70;
+  }
+
+  function disposeCharacter() {
+    if (characterController) {
+      characterController.dispose();
+      characterController = null;
+    }
+    if (characterMesh) {
+      characterMesh.dispose();
+      characterMesh = null;
+    }
+    if (characterMat) {
+      characterMat.dispose();
+      characterMat = null;
+    }
+    PROTECTED_NAMES.delete('character');
+  }
+
+  function updateCharacter(dt: number) {
+    if (!characterController || !characterMesh) return;
+
+    // Camera-relative movement direction
+    const camForward = camera.getTarget().subtract(camera.position);
+    camForward.y = 0;
+    camForward.normalize();
+    const camRight = Vector3.Cross(Vector3.Up(), camForward).normalize();
+
+    const speed = 5;
+    const moveDir = Vector3.Zero();
+    if (keysDown.has('KeyW')) moveDir.addInPlace(camForward);
+    if (keysDown.has('KeyS')) moveDir.subtractInPlace(camForward);
+    if (keysDown.has('KeyA')) moveDir.subtractInPlace(camRight);
+    if (keysDown.has('KeyD')) moveDir.addInPlace(camRight);
+    if (moveDir.lengthSquared() > 0) moveDir.normalize();
+    const desiredVelocity = moveDir.scale(speed);
+
+    // Ground detection
+    const supportInfo = characterController.checkSupport(dt, gravity);
+
+    // Jump if grounded + Space
+    const currentVel = characterController.getVelocity();
+    if (keysDown.has('Space') && supportInfo.supportedState === CharacterSupportedState.SUPPORTED) {
+      currentVel.y = 5;
+    }
+
+    // Set horizontal from input, keep vertical
+    currentVel.x = desiredVelocity.x;
+    currentVel.z = desiredVelocity.z;
+    characterController.setVelocity(currentVel);
+
+    // Integrate (handles gravity, collision, position update)
+    characterController.integrate(dt, supportInfo, gravity);
+
+    // Sync mesh and camera
+    const pos = characterController.getPosition();
+    characterMesh.position.copyFrom(pos);
+    camera.target.copyFrom(pos);
+  }
+
+  // Character toggle button
+  const charButton = document.getElementById('charButton') as HTMLButtonElement;
+  charButton.addEventListener('click', () => {
+    if (characterController) {
+      disposeCharacter();
+      charButton.textContent = 'Character: OFF';
+    } else {
+      createCharacter();
+      charButton.textContent = 'Character: ON';
+    }
+  });
+
   // State update tracking for debug overlay
   let lastTick = 0;
   let lastDeltaCount = 0;
@@ -532,6 +642,8 @@ async function main() {
   const clockSync = plugin.getClockSync();
 
   engine.runRenderLoop(() => {
+    const dt = engine.getDeltaTime() / 1000;
+    updateCharacter(dt);
     scene.render();
 
     // Update debug overlay
@@ -566,16 +678,6 @@ async function main() {
 
   window.addEventListener('resize', () => engine.resize());
 
-  // Toggle Babylon.js Inspector with 'i' key
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'i' || e.key === 'I') {
-      if (scene.debugLayer.isVisible()) {
-        scene.debugLayer.hide();
-      } else {
-        scene.debugLayer.show({ embedMode: true });
-      }
-    }
-  });
 }
 
 function formatBytes(bytes: number): string {
