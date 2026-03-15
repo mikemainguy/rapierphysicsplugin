@@ -8,3 +8,4 @@ export * from './binary-mesh-codec.js';
 export * from './geometry-registry-codec.js';
 export * from './material-texture-codec.js';
 export * from './rapier-loader.js';
+export * from './units.js';

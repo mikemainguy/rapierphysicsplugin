@@ -1,6 +1,6 @@
 {
   "name": "@rapierphysicsplugin/cli",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "type": "module",
   "license": "MIT",
   "description": "Report bugs and request features for rapierphysicsplugin",

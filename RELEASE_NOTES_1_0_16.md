@@ -67,9 +67,107 @@ mesh.position.copyFrom(controller.getPosition());
 - **Space** — jump (only when grounded)
 - **Mouse** — orbit camera around character
 
+## Unit Conversion Helpers
+
+**What it does:** New helper functions in `@rapierphysicsplugin/shared` for converting between common velocity units and Rapier's internal SI units.
+
+### Physics Units in Rapier
+
+Rapier uses SI units throughout. When 1 world unit = 1 meter:
+
+| Quantity | Internal unit | Symbol |
+|----------|--------------|--------|
+| Distance | meters | m |
+| Time | seconds | s |
+| Mass | kilograms | kg |
+| Linear velocity | meters per second | m/s |
+| Angular velocity | radians per second | rad/s |
+| Force | Newtons | N (kg·m/s²) |
+| Impulse | Newton-seconds | N·s (kg·m/s) |
+| Torque | Newton-meters | N·m |
+| Gravity | meters per second² | m/s² |
+| Friction / Restitution | dimensionless | 0–1 |
+| Spring stiffness | Newtons per meter | N/m |
+| Spring damping | Newton-seconds per meter | N·s/m |
+
+**Gravity** is set to `(0, -9.81, 0)` by default — standard Earth gravity in m/s².
+
+### Common conversions
+
+| From | To | Formula | Example |
+|------|----|---------|---------|
+| mph | m/s | × 0.44704 | 60 mph = 26.82 m/s |
+| km/h | m/s | ÷ 3.6 | 100 km/h = 27.78 m/s |
+| RPM | rad/s | × 2π/60 | 60 RPM = 6.28 rad/s |
+
+### Conversion functions
+
+```ts
+import { mphToMs, kmhToMs, msToMph, msToKmh, rpmToRadS, radSToRpm } from '@rapierphysicsplugin/shared';
+
+// Set a car's velocity to 60 mph
+plugin.setLinearVelocity(body, new Vector3(mphToMs(60), 0, 0));
+
+// Set a wheel spinning at 300 RPM
+plugin.setAxisMotorTarget(constraint, axis, rpmToRadS(300));
+
+// Read back velocity in familiar units
+const vel = body.getLinearVelocity();
+console.log(`Speed: ${msToMph(vel.length())} mph`);
+console.log(`Speed: ${msToKmh(vel.length())} km/h`);
+```
+
+| Function | Direction |
+|----------|-----------|
+| `mphToMs(mph)` | miles/hour → m/s |
+| `kmhToMs(kmh)` | km/hour → m/s |
+| `msToMph(ms)` | m/s → miles/hour |
+| `msToKmh(ms)` | m/s → km/hour |
+| `rpmToRadS(rpm)` | RPM → rad/s |
+| `radSToRpm(radS)` | rad/s → RPM |
+
+### Force vs impulse: a practical note
+
+Rapier's `addForce()` **accumulates** — forces are not cleared between physics steps. To apply a sustained constant force, use per-step impulses instead:
+
+```ts
+// Sustained 1 N force (correct)
+const dt = engine.getDeltaTime() / 1000;
+body.applyImpulse(new Vector3(1 * dt, 0, 0), body.position);
+
+// Single-step addForce (force persists until resetForces!)
+body.applyForce(new Vector3(1, 0, 0), body.position);
+```
+
+### Real-world reference values
+
+| Scenario | Value | In Rapier |
+|----------|-------|-----------|
+| Walking speed | 5 km/h | `kmhToMs(5)` = 1.39 m/s |
+| Jogging | 10 km/h | `kmhToMs(10)` = 2.78 m/s |
+| Sprinting | 30 km/h | `kmhToMs(30)` = 8.33 m/s |
+| Car in town | 30 mph | `mphToMs(30)` = 13.41 m/s |
+| Highway speed | 65 mph | `mphToMs(65)` = 29.06 m/s |
+| Free fall 1 s | 9.81 m/s | 9.81 (gravity) |
+| Jump peak 1 m | | v₀ = √(2·g·h) = 4.43 m/s |
+| Jump peak 2 m | | v₀ = √(2·g·h) = 6.26 m/s |
+| Electric motor | 3000 RPM | `rpmToRadS(3000)` = 314.16 rad/s |
+| Ceiling fan | 200 RPM | `rpmToRadS(200)` = 20.94 rad/s |
+
+## Physics Simulation Validation Tests
+
+Added 18 integration tests that run the real Rapier WASM engine and verify simulation results match physics equations (1 unit = 1 meter):
+
+- **Linear velocity** — 1 m/s for 1 s = 1 m displacement; diagonal 3-4-5 triangle
+- **Unit conversions** — 60 mph, 100 km/h, 60 RPM produce correct simulation results
+- **Gravity** — free fall distances match ½gt² (4.9 m at 1 s, 19.6 m at 2 s)
+- **Impulse** — F=ma verified: 1 N·s on 1 kg = 1 m/s; 5 N·s on 5 kg = 1 m/s
+- **Force** — single-step F·dt/m; sustained force via impulse-per-step; gravity cancellation
+- **Projectile motion** — horizontal launch and vertical launch to peak height
+
 ## Test Suite
 
-Added 48 tests for the character controller covering construction, position/velocity, properties, autostep/snap-to-ground, `checkSupport`, `integrate`, `moveWithCollisions`, `calculateMovementToRef`, disposal, and collision observables. Total test count: 680 tests across 32 test files (all passing).
+Added 48 tests for the character controller, 6 tests for unit conversions, and 18 physics simulation validation tests. Total test count: 704 tests across 34 test files (all passing).
 
 ## Files Changed
 
@@ -78,5 +176,9 @@ Added 48 tests for the character controller covering construction, position/velo
 | client | `src/index.ts` | Export `RapierCharacterController`, `CharacterSupportedState`, and related types |
 | client | `src/rapier/character-controller.ts` | New character controller class with query pipeline fix |
 | client | `src/rapier/__tests__/character-controller.test.ts` | 48 tests for character controller |
+| shared | `src/units.ts` | Unit conversion helpers (mph, km/h, RPM ↔ m/s, rad/s) |
+| shared | `src/index.ts` | Export unit conversion functions |
+| shared | `src/__tests__/units.test.ts` | 6 tests for unit conversions |
+| server | `src/__tests__/physics-units.test.ts` | 18 physics simulation validation tests |
 | demo | `index.html` | Add `#charButton` with teal styling |
 | demo | `src/main.ts` | Character controller integration, WASD input, camera follow, toggle button |
