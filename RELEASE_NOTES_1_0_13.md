@@ -1,5 +1,11 @@
 # Release Notes — v1.0.13
 
+## Umbrella Package
+
+The root `rapierphysicsplugin` package now acts as an umbrella — installing it pulls in all published workspace packages (`@rapierphysicsplugin/shared`, `@rapierphysicsplugin/client`, `@rapierphysicsplugin/server`, `@rapierphysicsplugin/cli`) as dependencies. Users can run a single `npm install rapierphysicsplugin` instead of installing each scoped package individually.
+
+The `version:sync` script now also updates the root package's dependency versions, and `publish:all` publishes the root package alongside the workspace packages.
+
 ## CLI Bug & Feature Reporting Tool
 
 **What it does:** New `@rapierphysicsplugin/cli` package that lets users report bugs, request features, or ask questions directly from the terminal. It auto-detects the local environment (Node version, OS, installed package versions) and opens the user's browser to a prefilled GitHub issue — no tokens, no backend, no accounts beyond GitHub.
@@ -71,4 +77,5 @@ Added 25 new tests for the CLI package covering environment collection, URL cons
 | root | `.github/ISSUE_TEMPLATE/bug_report.yml` | Structured bug report form |
 | root | `.github/ISSUE_TEMPLATE/feature_request.yml` | Structured feature request form |
 | root | `README.md` | Added "Reporting Issues" section |
+| root | `package.json` | Umbrella package: added `dependencies` on all child packages, `files` field, updated `version:sync` and `publish:all` |
 | root, shared, client, server | `package.json` | Added `bugs` field |

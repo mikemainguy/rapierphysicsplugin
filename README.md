@@ -12,6 +12,30 @@ packages/
   demo/     — Browser demo (Vite + BabylonJS) and demo physics server setup
 ```
 
+## Installation
+
+Install the umbrella package to get all components at once:
+
+```bash
+npm install rapierphysicsplugin
+```
+
+This pulls in `@rapierphysicsplugin/shared`, `@rapierphysicsplugin/client`, `@rapierphysicsplugin/server`, and `@rapierphysicsplugin/cli`. Then import from individual packages:
+
+```ts
+import { NetworkedRapierPlugin } from '@rapierphysicsplugin/client';
+import { PhysicsServer } from '@rapierphysicsplugin/server';
+import { loadRapier } from '@rapierphysicsplugin/shared';
+```
+
+Or install only what you need:
+
+```bash
+npm install @rapierphysicsplugin/client   # BabylonJS plugin + sync
+npm install @rapierphysicsplugin/server   # Authoritative physics server
+npm install @rapierphysicsplugin/shared   # Types, protocol, serialization
+```
+
 ## Prerequisites
 
 - **Node.js** v20+ (developed on v22)
@@ -109,7 +133,7 @@ npm bugs @rapierphysicsplugin/client
 
 ## Release Notes
 
-- [v1.0.13](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_13.md) — CLI bug/feature reporting tool, GitHub issue templates, bugs field on all packages
+- [v1.0.13](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_13.md) — Umbrella package, CLI bug/feature reporting tool, GitHub issue templates, bugs field on all packages
 - [v1.0.12](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_12.md) — Joint axis friction, motor system overhaul, constraint update buffering, hinge motor demo
 - [v1.0.11](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_11.md) — Fix heightfield nrows/ncols axis swap and column-major storage order
 - [v1.0.10](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_10.md) — Cylinder, convex hull, heightfield, and container shapes; msgpackr typed array serialization fix
