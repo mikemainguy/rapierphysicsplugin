@@ -148,6 +148,8 @@ npm bugs @rapierphysicsplugin/server
 
 ## Release Notes
 
+- [v1.0.16](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_16.md) — Character controller with WASD/jump/autostep, query pipeline fix for networked plugin, spring constraint demo
+- [v1.0.15](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_15.md) — Pre-step transform sync, multi-hit raycast, activation control
 - [v1.0.13](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_13.md) — CLI bug/feature reporting tool, GitHub issue templates, bugs field on all packages
 - [v1.0.12](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_12.md) — Joint axis friction, motor system overhaul, constraint update buffering, hinge motor demo
 - [v1.0.11](https://github.com/mikemainguy/rapierphysicsplugin/blob/main/RELEASE_NOTES_1_0_11.md) — Fix heightfield nrows/ncols axis swap and column-major storage order
